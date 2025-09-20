@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_model_loading() {
-        let model_path = "tests/models/ggml-tiny.bin";
+        let model_path = "tests/models/ggml-tiny.en.bin";
         if Path::new(model_path).exists() {
             let ctx = WhisperContext::new(model_path);
             assert!(ctx.is_ok());
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn test_silence_handling() {
-        let model_path = "tests/models/ggml-tiny.bin";
+        let model_path = "tests/models/ggml-tiny.en.bin";
         if Path::new(model_path).exists() {
             let ctx = WhisperContext::new(model_path).unwrap();
             let silence = vec![0.0f32; 16000]; // 1 second of silence
@@ -207,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_concurrent_states() {
-        let model_path = "tests/models/ggml-tiny.bin";
+        let model_path = "tests/models/ggml-tiny.en.bin";
         if Path::new(model_path).exists() {
             let ctx = Arc::new(WhisperContext::new(model_path).unwrap());
             let handles: Vec<_> = (0..4)

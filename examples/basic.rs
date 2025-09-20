@@ -3,12 +3,12 @@ use whisper_cpp_rs::{WhisperContext, FullParams, SamplingStrategy};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check if model exists
-    let model_path = "tests/models/ggml-tiny.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Error: Model file not found at {}", model_path);
         eprintln!("Please download a model file first.");
-        eprintln!("You can download the tiny model from:");
-        eprintln!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin");
+        eprintln!("You can download the tiny.en model from:");
+        eprintln!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin");
         return Ok(());
     }
 
