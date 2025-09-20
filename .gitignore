@@ -28,3 +28,5 @@ perf.data.old
 
 # Benchmark results
 /target/criterion/
+
+.claude
