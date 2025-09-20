@@ -62,8 +62,8 @@ fn load_wav_16khz_mono(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error
 #[test]
 fn test_vad_with_jfk_audio() {
     // Check if both models exist
-    let vad_model_path = "../tests/models/ggml-silero-vad.bin";
-    let whisper_model_path = "../tests/models/ggml-tiny.en.bin";
+    let vad_model_path = "tests/models/ggml-silero-vad.bin";
+    let whisper_model_path = "tests/models/ggml-tiny.en.bin";
     let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
 
     if !Path::new(vad_model_path).exists() {
@@ -166,8 +166,8 @@ fn test_vad_with_jfk_audio() {
 #[test]
 fn test_vad_with_transcription() {
     // This test combines VAD with actual transcription
-    let vad_model_path = "../tests/models/ggml-silero-vad.bin";
-    let whisper_model_path = "../tests/models/ggml-tiny.en.bin";
+    let vad_model_path = "tests/models/ggml-silero-vad.bin";
+    let whisper_model_path = "tests/models/ggml-tiny.en.bin";
     let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
 
     if !Path::new(vad_model_path).exists() ||
@@ -254,7 +254,7 @@ fn test_vad_with_transcription() {
 #[test]
 fn test_vad_with_silence() {
     // Test VAD with pure silence
-    let vad_model_path = "../tests/models/ggml-silero-vad.bin";
+    let vad_model_path = "tests/models/ggml-silero-vad.bin";
 
     if !Path::new(vad_model_path).exists() {
         eprintln!("Skipping VAD silence test: VAD model not found at {}", vad_model_path);
@@ -284,7 +284,7 @@ fn test_vad_with_silence() {
 #[test]
 fn test_vad_with_mixed_audio() {
     // Test VAD with artificially created mixed audio (speech-like noise + silence)
-    let vad_model_path = "../tests/models/ggml-silero-vad.bin";
+    let vad_model_path = "tests/models/ggml-silero-vad.bin";
 
     if !Path::new(vad_model_path).exists() {
         eprintln!("Skipping VAD mixed audio test: VAD model not found");

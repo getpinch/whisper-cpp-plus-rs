@@ -301,6 +301,12 @@ cargo test --features async
 cargo test --lib --features async async_api::tests::test_async_stream
 ```
 
+### With Output Logging
+
+```bash
+cargo test --features async -- --nocapture
+```
+
 ### Performance Testing
 
 ```bash
@@ -328,21 +334,21 @@ Our test suite includes:
 
 ### Test Requirements
 
-- **Models**: Download `ggml-tiny.en.bin` to `tests/models/`
+- **Models**: Download `ggml-tiny.en.bin` to `whisper-cpp-rs/tests/models/`
   ```bash
-  mkdir -p tests/models
-  curl -L -o tests/models/ggml-tiny.en.bin \
+  mkdir -p whisper-cpp-rs/tests/models
+  curl -L -o whisper-cpp-rs/tests/models/ggml-tiny.en.bin \
     https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
   ```
 - **Audio**: JFK sample included in `vendor/whisper.cpp/samples/`
 - **VAD Model** (optional): Download Silero VAD model for VAD tests
   ```bash
   # Download the latest Silero VAD model (v5.1.2)
-  curl -L -o tests/models/ggml-silero-vad.bin \
+  curl -L -o whisper-cpp-rs/tests/models/ggml-silero-vad.bin \
     https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
 
   # Alternative: Use the download script from whisper.cpp
-  ./vendor/whisper.cpp/models/download-vad-model.sh silero-v5.1.2 tests/models/
+  ./vendor/whisper.cpp/models/download-vad-model.sh silero-v5.1.2 whisper-cpp-rs/tests/models/
   ```
 
 ## Performance

@@ -38,7 +38,7 @@ fn test_params_are_not_send_sync() {
 #[test]
 fn test_arc_context_thread_safety() {
     // Skip if model doesn't exist
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -96,7 +96,7 @@ fn test_context_not_copy() {
 fn test_lifetime_safety() {
     // Test that states cannot outlive their contexts
     // This is enforced through lifetime parameters in WhisperState
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -129,7 +129,7 @@ fn test_null_pointer_safety() {
 #[test]
 fn test_buffer_safety() {
     // Test that audio buffer handling is safe
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -176,7 +176,7 @@ fn test_params_type_safety() {
 #[test]
 fn test_drop_safety() {
     // Test that Drop implementations are safe and don't cause double-free
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;

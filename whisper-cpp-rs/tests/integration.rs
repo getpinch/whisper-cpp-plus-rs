@@ -6,8 +6,8 @@ use whisper_cpp_rs::{
 
 #[test]
 fn test_model_loading() {
-    let ctx = WhisperContext::new("../tests/models/ggml-tiny.en.bin");
-    if Path::new("../tests/models/ggml-tiny.en.bin").exists() {
+    let ctx = WhisperContext::new("tests/models/ggml-tiny.en.bin");
+    if Path::new("tests/models/ggml-tiny.en.bin").exists() {
         assert!(ctx.is_ok());
     } else {
         assert!(ctx.is_err());
@@ -27,7 +27,7 @@ fn test_invalid_model_path() {
 
 #[test]
 fn test_silence_handling() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -45,7 +45,7 @@ fn test_silence_handling() {
 
 #[test]
 fn test_concurrent_states() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -69,7 +69,7 @@ fn test_concurrent_states() {
 
 #[test]
 fn test_transcription_with_params() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -130,7 +130,7 @@ fn test_beam_search_strategy() {
 
 #[test]
 fn test_model_info() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -150,7 +150,7 @@ fn test_model_info() {
 
 #[test]
 fn test_segment_timestamps() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -178,7 +178,7 @@ fn test_segment_timestamps() {
 
 #[test]
 fn test_state_reuse() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -207,7 +207,7 @@ fn test_state_reuse() {
 
 #[test]
 fn test_empty_audio_error() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;

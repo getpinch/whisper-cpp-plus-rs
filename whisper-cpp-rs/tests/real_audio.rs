@@ -33,7 +33,7 @@ fn load_wav_file<P: AsRef<Path>>(path: P) -> Result<Vec<f32>, Box<dyn std::error
 #[test]
 fn test_jfk_transcription() {
     // Skip if model doesn't exist
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found at {}", model_path);
         return;
@@ -82,7 +82,7 @@ fn test_jfk_transcription() {
 
 #[test]
 fn test_audio_duration_handling() {
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;
@@ -114,7 +114,7 @@ fn test_stereo_to_mono_conversion() {
     // This test documents that stereo audio needs to be converted to mono
     // before passing to whisper - this is currently the user's responsibility
 
-    let model_path = "../tests/models/ggml-tiny.en.bin";
+    let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
         eprintln!("Skipping test: model file not found");
         return;

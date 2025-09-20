@@ -388,6 +388,8 @@ mod tests {
         if Path::new(model_path).exists() {
             let processor = VadProcessor::new(model_path);
             assert!(processor.is_ok());
+        } else {
+            eprintln!("Skipping VAD processor creation test: model not found");
         }
     }
 
