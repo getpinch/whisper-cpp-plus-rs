@@ -1,0 +1,30 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test models (they can be large)
+*.bin
+!tests/samples/*.bin
+
+# Profiling and debugging
+*.profraw
+*.profdata
+perf.data
+perf.data.old
+
+# Documentation build
+/target/doc/
+
+# Benchmark results
+/target/criterion/

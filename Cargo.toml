@@ -1,0 +1,25 @@
+[workspace]
+members = ["whisper-sys", "whisper-cpp-rs"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/whisper-cpp-rs"
+keywords = ["whisper", "speech", "transcription", "asr", "speech-to-text"]
+categories = ["multimedia::audio", "api-bindings", "science::robotics"]
+
+[workspace.dependencies]
+thiserror = "1.0"
+num_cpus = "1.16"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.dev]
+opt-level = 1

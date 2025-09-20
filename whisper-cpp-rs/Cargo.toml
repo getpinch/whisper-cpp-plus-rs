@@ -1,0 +1,39 @@
+[package]
+name = "whisper-cpp-rs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "Safe, idiomatic Rust bindings for whisper.cpp"
+readme = "README.md"
+
+[dependencies]
+whisper-sys = { path = "../whisper-sys", version = "0.1.0" }
+thiserror = { workspace = true }
+num_cpus = { workspace = true }
+
+# Optional dependencies
+tokio = { version = "1.35", features = ["full"], optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.35", features = ["full"] }
+hound = "3.5"
+criterion = "0.5"
+
+[features]
+default = []
+cuda = ["whisper-sys/cuda"]
+metal = ["whisper-sys/metal"]
+openblas = ["whisper-sys/openblas"]
+async = ["tokio"]
+
+[[bench]]
+name = "transcription"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
