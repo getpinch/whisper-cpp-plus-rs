@@ -34,7 +34,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - 🦀 **Idiomatic Rust** - Type-safe API with proper error handling
 - 🖥️ **Cross-platform** - Windows, Linux, macOS (Intel & Apple Silicon)
 - 📦 **All models supported** - tiny, base, small, medium, large-v3
-- ⚡ **Hardware acceleration ready** - CPU optimized, GPU support planned
+- ⚡ **Hardware acceleration** - CPU optimized with SIMD, GPU support via feature flags
+- 🌊 **Streaming support** - Real-time transcription with configurable chunking
+- ⚙️ **Async API** - Non-blocking transcription for async Rust applications
+- 🎯 **VAD integration** - Voice Activity Detection for improved accuracy
 
 ## Installation
 
@@ -183,11 +186,10 @@ fn concurrent_transcription(model_path: &str) -> Result<(), Box<dyn std::error::
 }
 ```
 
-### Streaming Transcription (Planned)
+### Streaming Transcription
 
 ```rust
-// Note: Streaming is planned for v0.2.0
-use whisper_cpp_rs::WhisperStream;
+use whisper_cpp_rs::{WhisperStream, StreamConfigBuilder};
 
 fn stream_from_microphone() -> Result<(), Box<dyn std::error::Error>> {
     let ctx = WhisperContext::new("models/ggml-base.en.bin")?;
@@ -208,11 +210,10 @@ fn stream_from_microphone() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-### VAD Integration (Planned)
+### VAD Integration
 
 ```rust
-// Note: VAD support is planned for v0.2.0
-use whisper_cpp_rs::{WhisperContext, VadProcessor};
+use whisper_cpp_rs::{WhisperContext, VadProcessor, VadParams};
 
 fn transcribe_with_vad(audio: &[f32]) -> Result<String, Box<dyn std::error::Error>> {
     let ctx = WhisperContext::new("models/ggml-base.en.bin")?;
@@ -278,6 +279,20 @@ cargo bench
 - Use VAD to skip silence
 
 ## Model Management
+
+### Feature Flags
+
+```toml
+[dependencies]
+whisper-cpp-rs = "0.1.0"
+
+# Enable async API
+whisper-cpp-rs = { version = "0.1.0", features = ["async"] }
+
+# Enable GPU acceleration
+whisper-cpp-rs = { version = "0.1.0", features = ["cuda"] }  # NVIDIA GPUs
+whisper-cpp-rs = { version = "0.1.0", features = ["metal"] } # macOS GPUs
+```
 
 ### Available Models
 
@@ -390,10 +405,13 @@ at your option.
 | FFI Safety | ✅ Full | ⚠️ Partial | ✅ Full |
 | Thread Safety | ✅ Verified | ❌ No | ⚠️ Limited |
 | API Coverage | ✅ 100% | ✅ 80% | ⚠️ 60% |
+| Streaming Support | ✅ Yes | ❌ No | ❌ No |
+| Async API | ✅ Yes | ❌ No | ⚠️ Limited |
+| VAD Integration | ✅ Yes | ❌ No | ❌ No |
 | Active Maintenance | ✅ Yes | ❌ No | ⚠️ Sporadic |
-| Hardware Acceleration | 🔧 Planned | ❌ No | ✅ CUDA only |
+| Hardware Acceleration | ✅ CPU/GPU | ❌ No | ✅ CUDA only |
 | Documentation | ✅ Comprehensive | ⚠️ Basic | ⚠️ Basic |
-| Type Safety Tests | ✅ 11 tests | ❌ None | ❌ None |
+| Test Coverage | ✅ Extensive | ❌ None | ⚠️ Basic |
 
 ## Roadmap
 
@@ -402,12 +420,14 @@ at your option.
 - ✅ Thread-safe architecture
 - ✅ Type safety verification
 - ✅ Real audio testing
+- ✅ Streaming support
+- ✅ VAD integration
+- ✅ Async API
 
 ### v0.2.0 (Planned)
-- [ ] Streaming support
-- [ ] VAD integration
-- [ ] Async API
 - [ ] Microphone input
+- [ ] WebAssembly support
+- [ ] Enhanced GPU acceleration
 
 ### v1.0.0 (Future)
 - [ ] GPU acceleration (CUDA, Metal)

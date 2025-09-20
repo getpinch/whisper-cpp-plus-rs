@@ -14,6 +14,10 @@ pub struct FullParams {
     initial_prompt: Option<CString>,
 }
 
+// FullParams is Send and Sync because we only use it in controlled contexts
+unsafe impl Send for FullParams {}
+unsafe impl Sync for FullParams {}
+
 impl FullParams {
     pub fn new(strategy: SamplingStrategy) -> Self {
         let inner = unsafe {

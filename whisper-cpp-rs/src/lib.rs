@@ -46,10 +46,16 @@
 //! # }
 //! ```
 
+mod buffer;
 mod context;
 mod error;
 mod params;
 mod state;
+mod stream;
+mod vad;
+
+#[cfg(feature = "async")]
+mod async_api;
 
 pub use context::WhisperContext;
 pub use error::{Result, WhisperError};
@@ -57,6 +63,13 @@ pub use params::{
     FullParams, SamplingStrategy, TranscriptionParams, TranscriptionParamsBuilder,
 };
 pub use state::{Segment, TranscriptionResult, WhisperState};
+pub use stream::{StreamConfig, StreamConfigBuilder, WhisperStream};
+pub use vad::{
+    VadContextParams, VadParams, VadParamsBuilder, VadProcessor, VadSegments,
+};
+
+#[cfg(feature = "async")]
+pub use async_api::{AsyncWhisperStream, SharedAsyncStream};
 
 // Re-export the sys crate for advanced users who need lower-level access
 pub use whisper_sys;
