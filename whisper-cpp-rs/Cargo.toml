@@ -35,6 +35,10 @@ async = ["tokio"]
 name = "basic"
 path = "../examples/basic.rs"
 
+[[example]]
+name = "minimal"
+path = "../examples/minimal.rs"
+
 [[bench]]
 name = "transcription"
 harness = false

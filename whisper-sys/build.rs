@@ -5,6 +5,10 @@ fn main() {
     // Tell cargo to rerun if the build script changes
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../vendor/whisper.cpp");
+    println!("cargo:rerun-if-changed=src/backend_stubs.cpp");
+
+    // Get output directory
+    let out_dir = env::var("OUT_DIR").unwrap();
 
     // Get target OS for platform-specific configuration
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
@@ -15,6 +19,18 @@ fn main() {
 
     // Generate bindings using bindgen
     generate_bindings();
+
+    // Important: Add linking instructions
+    println!("cargo:rustc-link-search=native={}", out_dir);
+    println!("cargo:rustc-link-lib=static=whisper");
+
+    // Windows-specific libraries
+    if target_os == "windows" {
+        println!("cargo:rustc-link-lib=ws2_32");
+        println!("cargo:rustc-link-lib=bcrypt");
+        println!("cargo:rustc-link-lib=advapi32");
+        println!("cargo:rustc-link-lib=userenv");
+    }
 }
 
 fn build_whisper_cpp(target_os: &str, target_arch: &str) {
@@ -23,34 +39,40 @@ fn build_whisper_cpp(target_os: &str, target_arch: &str) {
     // Configure C++ compilation
     build.cpp(true);
 
-    // Set C++ standard based on compiler
+    // Set C++ standard - ggml-backend-reg.cpp requires C++17 for std::filesystem
     if cfg!(target_env = "msvc") {
-        build.std("c++14");  // MSVC uses c++14 as minimum
+        build.std("c++17");
     } else {
-        build.std("c++11");
+        build.std("c++17");
     }
 
     // Add include directories
     build.include("../vendor/whisper.cpp")
         .include("../vendor/whisper.cpp/include")
         .include("../vendor/whisper.cpp/ggml/include")
-        .include("../vendor/whisper.cpp/ggml/src");
+        .include("../vendor/whisper.cpp/ggml/src")
+        .include("../vendor/whisper.cpp/ggml/src/ggml-cpu");
 
     // Core source files
     build.file("../vendor/whisper.cpp/src/whisper.cpp")
         .file("../vendor/whisper.cpp/ggml/src/ggml.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-alloc.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-backend.cpp")
+        .file("../vendor/whisper.cpp/ggml/src/ggml-backend-reg.cpp")
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c")
+        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp")
+        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/binary-ops.cpp")
+        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/unary-ops.cpp")
+        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ops.cpp")
         .file("../vendor/whisper.cpp/ggml/src/ggml-threading.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-quants.c")
-        .file("src/backend_stubs.cpp");
+        .file("../vendor/whisper.cpp/ggml/src/ggml-quants.c");
 
     // Common compiler flags
     build.flag_if_supported("-fPIC");
 
-    // Add definitions for memory alignment
+    // Add definitions for memory alignment and features
     build.define("_ALIGNAS_SUPPORTED", None);
+    build.define("GGML_USE_CPU", None);
 
     // Platform-specific configuration
     match target_os {
@@ -76,13 +98,13 @@ fn build_whisper_cpp(target_os: &str, target_arch: &str) {
             build.define("_CRT_SECURE_NO_WARNINGS", None);
             build.define("WIN32_LEAN_AND_MEAN", None);
 
-            // Windows needs explicit linking for some libraries
-            println!("cargo:rustc-link-lib=ws2_32");
+            // Windows needs explicit linking for some libraries - handled in main()
 
             // Use MSVC-specific optimizations
             if cfg!(target_env = "msvc") {
                 build.flag("/O2");
                 build.flag("/arch:AVX2");
+                build.flag("/MT");  // Static runtime to avoid DLL issues
             }
         }
         "linux" => {
