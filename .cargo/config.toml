@@ -1,0 +1,6 @@
+[alias]
+xtask = "run --package xtask --"
+
+[env]
+# Uncomment and set this to use prebuilt libraries
+# WHISPER_PREBUILT_PATH = "path/to/prebuilt/target/profile"

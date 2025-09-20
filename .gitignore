@@ -2,6 +2,9 @@
 target/
 Cargo.lock
 
+# Prebuilt libraries
+prebuilt/
+
 # IDE files
 .vscode/
 .idea/

@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     // Tell cargo to rerun if the build script changes
@@ -14,15 +14,21 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".to_string());
 
-    // Build whisper.cpp using cc crate
-    build_whisper_cpp(&target_os, &target_arch);
+    // Check for prebuilt library
+    let use_prebuilt = check_and_use_prebuilt(&target_os);
+
+    if !use_prebuilt {
+        // Build whisper.cpp using cc crate
+        build_whisper_cpp(&target_os, &target_arch);
+
+        // Important: Add linking instructions for built library
+        println!("cargo:rustc-link-search=native={}", out_dir);
+    }
+
+    println!("cargo:rustc-link-lib=static=whisper");
 
     // Generate bindings using bindgen
     generate_bindings();
-
-    // Important: Add linking instructions
-    println!("cargo:rustc-link-search=native={}", out_dir);
-    println!("cargo:rustc-link-lib=static=whisper");
 
     // Windows-specific libraries
     if target_os == "windows" {
@@ -31,6 +37,68 @@ fn main() {
         println!("cargo:rustc-link-lib=advapi32");
         println!("cargo:rustc-link-lib=userenv");
     }
+}
+
+fn check_and_use_prebuilt(target_os: &str) -> bool {
+    // Determine library file name based on platform
+    let lib_name = if target_os == "windows" {
+        "whisper.lib"
+    } else {
+        "libwhisper.a"
+    };
+
+    // Check for WHISPER_PREBUILT_PATH environment variable
+    if let Ok(prebuilt_path) = env::var("WHISPER_PREBUILT_PATH") {
+        let lib_path = Path::new(&prebuilt_path).join(lib_name);
+        if lib_path.exists() {
+            println!("cargo:warning=Using prebuilt whisper library from: {}", prebuilt_path);
+            println!("cargo:rustc-link-search=native={}", prebuilt_path);
+            return true;
+        }
+    }
+
+    // Check for prebuilt library in standard locations
+    let target = env::var("TARGET").unwrap_or_default();
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "release".to_string());
+
+    // Try prebuilt directory in project root
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let prebuilt_dir = Path::new(&manifest_dir).parent()
+        .map(|p| p.join("prebuilt").join(&target).join(&profile))
+        .unwrap_or_else(|| Path::new("../prebuilt").join(&target).join(&profile));
+
+    // Use correct library extension based on platform
+    let lib_name = if target_os == "windows" {
+        "whisper.lib"
+    } else {
+        "libwhisper.a"
+    };
+    let lib_path = prebuilt_dir.join(lib_name);
+
+    if lib_path.exists() {
+        // Use absolute path for linking
+        let abs_path = lib_path.parent().unwrap().canonicalize()
+            .unwrap_or_else(|_| prebuilt_dir.clone());
+        println!("cargo:warning=Using prebuilt whisper library from: {}", abs_path.display());
+        println!("cargo:rustc-link-search=native={}", abs_path.display());
+        return true;
+    }
+
+    // Also check for system-wide installation
+    if target_os != "windows" {
+        // Check common system library paths
+        let system_paths = ["/usr/local/lib", "/usr/lib", "/opt/homebrew/lib"];
+        for path in &system_paths {
+            let lib_path = Path::new(path).join("libwhisper.a");
+            if lib_path.exists() {
+                println!("cargo:warning=Using system whisper library from: {}", path);
+                println!("cargo:rustc-link-search=native={}", path);
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 fn build_whisper_cpp(target_os: &str, target_arch: &str) {
