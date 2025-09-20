@@ -236,27 +236,107 @@ fn transcribe_with_vad(audio: &[f32]) -> Result<String, Box<dyn std::error::Erro
 
 ## Running Tests
 
+### Quick Test Commands
+
 ```bash
 # Run all tests
 cargo test
 
-# Run specific test suites
-cargo test --lib                    # Unit tests only
-cargo test --test integration       # Integration tests
-cargo test --test real_audio       # Real audio transcription tests
-cargo test --test type_safety      # Type safety verification
-
-# Run with output
+# Run all tests with output
 cargo test -- --nocapture
 
 # Run benchmarks
 cargo bench
 ```
 
+### Individual Module Tests
+
+Run specific module tests for faster iteration:
+
+```bash
+# Core Modules
+cargo test --lib context::        # Context management tests
+cargo test --lib state::          # State handling tests
+cargo test --lib params::         # Parameter configuration tests
+cargo test --lib error::          # Error handling tests
+
+# Feature Modules
+cargo test --lib buffer::         # Audio buffer utilities tests
+cargo test --lib stream::         # Streaming transcription tests
+cargo test --lib vad::            # VAD (Voice Activity Detection) tests
+
+# Async API (requires async feature)
+cargo test --lib --features async async_api::
+
+# All library unit tests
+cargo test --lib
+```
+
+### Integration Test Suites
+
+```bash
+# Integration tests
+cargo test --test integration      # Core integration tests
+
+# Real audio transcription tests
+cargo test --test real_audio       # Tests with actual audio files
+
+# Type safety verification
+cargo test --test type_safety      # Comprehensive type safety tests
+```
+
+### Feature-Specific Testing
+
+```bash
+# Test with async features
+cargo test --features async
+
+# Test with all features (except GPU)
+cargo test --features async
+
+# Test specific module with features
+cargo test --lib --features async async_api::tests::test_async_stream
+```
+
+### Performance Testing
+
+```bash
+# Run benchmarks
+cargo bench
+
+# Run specific benchmark
+cargo bench transcription
+
+# Profile with release mode
+cargo test --release
+```
+
+### Test Coverage Summary
+
+Our test suite includes:
+- **Core Modules**: 5+ tests for context, state, params, error handling
+- **Buffer Module**: 3 tests for audio buffer management
+- **Streaming Module**: 3 tests for real-time transcription
+- **Async Module**: 3 tests for non-blocking operations
+- **VAD Module**: 5 tests for voice activity detection
+- **Type Safety**: 11 tests verifying Send/Sync traits
+- **Integration**: End-to-end transcription tests
+- **Real Audio**: Tests with actual audio files
+
 ### Test Requirements
 
-- Models: Download `ggml-tiny.en.bin` to `tests/models/`
-- Audio: JFK sample included in `vendor/whisper.cpp/samples/`
+- **Models**: Download `ggml-tiny.en.bin` to `tests/models/`
+  ```bash
+  mkdir -p tests/models
+  curl -L -o tests/models/ggml-tiny.en.bin \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+  ```
+- **Audio**: JFK sample included in `vendor/whisper.cpp/samples/`
+- **VAD Model** (optional): Download Silero VAD model for VAD tests
+  ```bash
+  curl -L -o tests/models/ggml-silero-vad.bin \
+    https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-silero-vad.bin
+  ```
 
 ## Performance
 
