@@ -126,39 +126,25 @@ fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
 }
 
 fn load_audio_example() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    // Check if there's a sample audio file
-    let audio_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    // Try multiple locations for the audio file
+    let paths = vec![
+        "vendor/whisper.cpp/samples/jfk.wav",
+        "../vendor/whisper.cpp/samples/jfk.wav",
+        "samples/audio.wav",
+    ];
 
-    if Path::new(audio_path).exists() {
-        println!("Loading audio from: {}", audio_path);
-        // Load actual audio using hound or other library
-        load_wav_file(audio_path)
-    } else {
-        println!("No audio file found, generating synthetic example...");
-        // Generate synthetic audio with speech and silence for demonstration
-        Ok(generate_synthetic_audio())
-    }
-}
-fn generate_synthetic_audio() -> Vec<f32> {
-    let sample_rate = 16000;
-    let mut audio = Vec::new();
-
-    // Pattern: silence, speech, silence, speech, silence
-    audio.extend(vec![0.0f32; sample_rate * 2]); // 2s silence
-
-    // 3s of "speech" (noise)
-    for _ in 0..sample_rate * 3 {
-        audio.push((rand::random::<f32>() - 0.5) * 0.2);
+    for audio_path in &paths {
+        if Path::new(audio_path).exists() {
+            println!("Loading audio from: {}", audio_path);
+            return load_wav_file(audio_path);
+        }
     }
 
-    audio.extend(vec![0.0f32; sample_rate * 3]); // 3s silence
-
-    // 3s more "speech"
-    for _ in 0..sample_rate * 3 {
-        audio.push((rand::random::<f32>() - 0.5) * 0.2);
+    eprintln!("\nError: No audio files found!");
+    eprintln!("Please provide audio at one of these locations:");
+    for path in &paths {
+        eprintln!("  - {}", path);
     }
-
-    audio.extend(vec![0.0f32; sample_rate * 2]); // 2s silence
-
-    audio
+    eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful VAD results.");
+    Err("No audio files found for VAD comparison".into())
 }

@@ -8,6 +8,7 @@ use std::time::Duration;
 use whisper_cpp_rs::{
     FullParams, SamplingStrategy, StreamConfigBuilder, WhisperContext, WhisperStream,
 };
+use hound;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== WhisperStream Reuse Demo ===\n");
@@ -94,7 +95,7 @@ fn run_with_model(model_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Process some audio
-        let audio = vec![0.0f32; 16000 * 2]; // 2 seconds of silence
+        let audio = load_demo_audio(2)?; // Load 2 seconds of real audio
         stream.feed_audio(&audio);
 
         let _ = stream.process_pending()?;
@@ -112,4 +113,51 @@ fn run_with_model(model_path: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nDemo complete!");
     Ok(())
+}
+
+fn load_demo_audio(duration_seconds: usize) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    // Try to load real audio files
+    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
+    let alt_path = "samples/audio.wav";
+
+    let audio = if Path::new(jfk_path).exists() {
+        println!("Loading JFK audio from {}...", jfk_path);
+        load_wav_file(jfk_path)?
+    } else if Path::new(alt_path).exists() {
+        println!("Loading audio from {}...", alt_path);
+        load_wav_file(alt_path)?
+    } else {
+        eprintln!("\nError: No audio files found!");
+        eprintln!("Please provide audio at one of these locations:");
+        eprintln!("  1. {} (JFK sample from whisper.cpp)", jfk_path);
+        eprintln!("  2. {} (custom audio sample at 16kHz)", alt_path);
+        eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful speech.");
+        return Err("No audio files found for streaming reuse demo".into());
+    };
+
+    // Truncate to requested duration
+    let samples_needed = 16000 * duration_seconds;
+    Ok(audio.into_iter().take(samples_needed).collect())
+}
+
+fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+
+    // Check format
+    if spec.sample_rate != 16000 {
+        eprintln!("Warning: Audio sample rate is {}Hz, expected 16000Hz", spec.sample_rate);
+    }
+
+    if spec.channels != 1 {
+        eprintln!("Warning: Audio has {} channels, using first channel only", spec.channels);
+    }
+
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
+        .step_by(spec.channels as usize)
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+
+    Ok(samples)
 }

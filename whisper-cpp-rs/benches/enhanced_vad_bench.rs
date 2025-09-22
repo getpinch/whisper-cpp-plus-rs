@@ -6,16 +6,41 @@ use whisper_cpp_rs::enhanced::vad::{EnhancedVadProcessor, EnhancedVadParamsBuild
 use std::time::Duration;
 
 fn load_jfk_audio() -> Vec<f32> {
-    let audio_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    // Try multiple locations for the audio file
+    let paths = vec![
+        "vendor/whisper.cpp/samples/jfk.wav",
+        "../vendor/whisper.cpp/samples/jfk.wav",
+        "samples/benchmark_audio.wav",
+    ];
 
-    if !std::path::Path::new(audio_path).exists() {
-        eprintln!("JFK audio sample not found at {}. Using synthetic fallback.", audio_path);
-        // Fallback to synthetic audio if real file doesn't exist
-        return generate_synthetic_speech(11); // JFK clip is ~11 seconds
+    for audio_path in &paths {
+        if std::path::Path::new(audio_path).exists() {
+            eprintln!("Loading JFK audio from: {}", audio_path);
+            return load_wav_file(audio_path).unwrap_or_else(|e| {
+                eprintln!("Failed to load audio file: {}", e);
+                panic!("Cannot run benchmarks without audio files");
+            });
+        }
     }
 
-    // Load WAV file using hound
-    let mut reader = hound::WavReader::open(audio_path).unwrap();
+    eprintln!("\nError: No audio files found for benchmarks!");
+    eprintln!("Please provide audio at one of these locations:");
+    for path in &paths {
+        eprintln!("  - {}", path);
+    }
+    eprintln!("\nNote: Benchmarks require real audio for meaningful results.");
+    eprintln!("Falling back to synthetic audio for demonstration only.");
+    eprintln!("Results will not be representative of real performance!\n");
+
+    // Still generate synthetic as last resort for CI/testing
+    generate_synthetic_speech(11) // JFK clip is ~11 seconds
+
+}
+
+fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    use hound;
+
+    let mut reader = hound::WavReader::open(path)?;
     let spec = reader.spec();
 
     // Convert to mono f32 samples at 16kHz
@@ -42,7 +67,7 @@ fn load_jfk_audio() -> Vec<f32> {
 
     // Note: This assumes the audio is already at 16kHz
     // In production, you'd resample if needed
-    samples
+    Ok(samples)
 }
 
 fn generate_synthetic_speech(duration_seconds: usize) -> Vec<f32> {

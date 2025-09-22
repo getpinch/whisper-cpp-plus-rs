@@ -14,6 +14,8 @@ use whisper_cpp_rs::{
     AsyncWhisperStream, FullParams, SamplingStrategy, StreamConfig, StreamConfigBuilder,
     WhisperContext,
 };
+#[cfg(feature = "async")]
+use hound;
 
 #[cfg(not(feature = "async"))]
 fn main() {
@@ -56,8 +58,8 @@ async fn simple_async_transcription(
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Running simple async transcription...");
 
-    // Generate test audio
-    let audio = generate_test_audio(3.0); // 3 seconds
+    // Load test audio
+    let audio = load_test_audio(3.0)?; // 3 seconds
 
     // Transcribe asynchronously
     let start = std::time::Instant::now();
@@ -90,7 +92,7 @@ async fn async_streaming(context: &WhisperContext) -> Result<(), Box<dyn std::er
     // Simulate streaming audio input
     println!("Feeding audio chunks...");
     for i in 0..5 {
-        let chunk = generate_test_audio(1.0); // 1 second chunks
+        let chunk = load_test_audio(1.0)?; // 1 second chunks
 
         println!("  Feeding chunk {}...", i + 1);
         stream.feed_audio(chunk).await?;
@@ -142,7 +144,7 @@ async fn concurrent_transcriptions(
     for i in 0..3 {
         let ctx = context.clone();
         let handle = tokio::spawn(async move {
-            let audio = generate_test_audio(2.0); // 2 seconds each
+            let audio = load_test_audio(2.0).expect("Failed to load audio"); // 2 seconds each
 
             let start = std::time::Instant::now();
             let result = ctx.transcribe_async(audio).await;
@@ -176,33 +178,61 @@ async fn concurrent_transcriptions(
 }
 
 #[cfg(feature = "async")]
-fn generate_test_audio(seconds: f32) -> Vec<f32> {
-    // Generate silence with very slight noise
-    let samples = (seconds * 16000.0) as usize;
-    let mut audio = vec![0.0f32; samples];
+fn load_test_audio(seconds: f32) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    // Try to load real audio files
+    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
+    let alt_path = "samples/audio.wav";
 
-    // Add minimal noise to avoid complete silence
-    for sample in audio.iter_mut() {
-        *sample = (rand::random::<f32>() - 0.5) * 0.0001;
+    let audio = if Path::new(jfk_path).exists() {
+        println!("  Loading JFK audio from {}...", jfk_path);
+        load_wav_file(jfk_path)?
+    } else if Path::new(alt_path).exists() {
+        println!("  Loading audio from {}...", alt_path);
+        load_wav_file(alt_path)?
+    } else {
+        eprintln!("\nError: No audio files found!");
+        eprintln!("Please provide audio at one of these locations:");
+        eprintln!("  1. {} (JFK sample from whisper.cpp)", jfk_path);
+        eprintln!("  2. {} (custom audio sample)", alt_path);
+        eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful speech.");
+        return Err("No audio files found for async example".into());
+    };
+
+    // Truncate or repeat to get requested duration
+    let samples_needed = (seconds * 16000.0) as usize;
+    if audio.len() >= samples_needed {
+        Ok(audio[..samples_needed].to_vec())
+    } else {
+        // Repeat the audio to fill the requested duration
+        let mut result = Vec::with_capacity(samples_needed);
+        while result.len() < samples_needed {
+            let remaining = samples_needed - result.len();
+            let to_copy = remaining.min(audio.len());
+            result.extend_from_slice(&audio[..to_copy]);
+        }
+        Ok(result)
     }
-
-    audio
 }
 
-/// Simple rand implementation for demo
-#[cfg(all(feature = "async", not(feature = "rand")))]
-mod rand {
-    use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "async")]
+fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
 
-    pub fn random<T>() -> T
-    where
-        T: From<f32>,
-    {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .subsec_nanos();
-        let value = ((nanos % 1000) as f32) / 1000.0;
-        T::from(value)
+    // Check format
+    if spec.sample_rate != 16000 {
+        eprintln!("Warning: Audio sample rate is {}Hz, expected 16000Hz", spec.sample_rate);
     }
+
+    if spec.channels != 1 {
+        eprintln!("Warning: Audio has {} channels, using first channel only", spec.channels);
+    }
+
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
+        .step_by(spec.channels as usize)
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+
+    Ok(samples)
 }

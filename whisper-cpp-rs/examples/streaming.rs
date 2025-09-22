@@ -125,26 +125,28 @@ fn process_audio_session(stream: &mut WhisperStream, session_num: usize) -> Resu
 
 /// Generate demo audio for a session
 fn generate_demo_audio(duration_seconds: usize) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    // Try to load the JFK sample if it exists
-    let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    // Try to load real audio samples
+    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
+    let alt_path = "samples/audio.wav";
 
     if Path::new(jfk_path).exists() {
-        println!("  Loading JFK sample audio...");
+        println!("  Loading JFK sample audio from {}...", jfk_path);
         let audio = load_wav_16khz_mono(jfk_path)?;
         // Truncate to requested duration
         let samples_needed = 16000 * duration_seconds;
         Ok(audio.into_iter().take(samples_needed).collect())
+    } else if Path::new(alt_path).exists() {
+        println!("  Loading audio from {}...", alt_path);
+        let audio = load_wav_16khz_mono(alt_path)?;
+        let samples_needed = 16000 * duration_seconds;
+        Ok(audio.into_iter().take(samples_needed).collect())
     } else {
-        // Generate simulated audio (silence with some noise)
-        println!("  Generating simulated audio ({} seconds)...", duration_seconds);
-        let mut audio = vec![0.0f32; 16000 * duration_seconds];
-
-        // Add very slight noise to prevent complete silence
-        for sample in audio.iter_mut() {
-            *sample = (rand::random::<f32>() - 0.5) * 0.001;
-        }
-
-        Ok(audio)
+        eprintln!("\nError: No audio files found!");
+        eprintln!("Please provide audio at one of these locations:");
+        eprintln!("  1. {} (JFK sample from whisper.cpp)", jfk_path);
+        eprintln!("  2. {} (custom audio sample at 16kHz)", alt_path);
+        eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful speech.");
+        Err("No audio files found for streaming example".into())
     }
 }
 
@@ -204,13 +206,3 @@ fn load_wav_16khz_mono(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error
     Ok(mono_samples)
 }
 
-/// Add rand as a dev dependency for demo purposes
-#[cfg(not(feature = "rand"))]
-mod rand {
-    pub fn random<T>() -> T
-    where
-        T: Default,
-    {
-        T::default()
-    }
-}

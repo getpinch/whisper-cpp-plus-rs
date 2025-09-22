@@ -109,11 +109,14 @@ fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
     let mut group = c.benchmark_group("transcription_fallback");
     group.measurement_time(Duration::from_secs(15));
 
-    // Generate test audio
-    let clear_audio = vec![0.0f32; 16000 * 3]; // 3 seconds of silence (clear)
-    let noisy_audio: Vec<f32> = (0..16000 * 3)
-        .map(|_| (rand::random::<f32>() - 0.5) * 0.1)
-        .collect(); // 3 seconds of noise
+    // Load real audio for benchmarks
+    let audio = load_benchmark_audio().unwrap_or_else(|e| {
+        eprintln!("Failed to load audio: {}. Skipping transcription benchmarks.", e);
+        vec![0.0f32; 16000] // Fallback to minimal audio
+    });
+
+    // Create noisy version for comparison
+    let noisy_audio = add_noise_to_audio(&audio);
 
     let params = TranscriptionParams::builder()
         .language("en")
@@ -122,7 +125,7 @@ fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
     // Benchmark standard transcription (no fallback)
     group.bench_function("standard_clear", |b| {
         let ctx = Arc::clone(&ctx);
-        let audio = clear_audio.clone();
+        let audio = audio.clone();
         b.iter(|| {
             ctx.transcribe_with_params(black_box(&audio), params.clone()).unwrap()
         })
@@ -139,7 +142,7 @@ fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
     // Benchmark enhanced transcription with fallback
     group.bench_function("enhanced_clear", |b| {
         let ctx = Arc::clone(&ctx);
-        let audio = clear_audio.clone();
+        let audio = audio.clone();
         b.iter(|| {
             ctx.transcribe_with_params_enhanced(black_box(&audio), params.clone()).unwrap()
         })
@@ -154,6 +157,54 @@ fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
     });
 
     group.finish();
+}
+
+fn load_benchmark_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
+    let alt_path = "samples/benchmark_audio.wav";
+
+    if std::path::Path::new(jfk_path).exists() {
+        load_wav_file(jfk_path)
+    } else if std::path::Path::new(alt_path).exists() {
+        load_wav_file(alt_path)
+    } else {
+        Err(format!("No audio files found at {} or {}", jfk_path, alt_path).into())
+    }
+}
+
+fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    use hound;
+
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+
+    if spec.sample_rate != 16000 {
+        eprintln!("Warning: Audio sample rate is {}Hz, expected 16000Hz", spec.sample_rate);
+    }
+
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
+        .step_by(spec.channels as usize)
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+
+    // Truncate to 3 seconds for benchmark
+    let max_samples = 16000 * 3;
+    Ok(samples.into_iter().take(max_samples).collect())
+}
+
+fn add_noise_to_audio(audio: &[f32]) -> Vec<f32> {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
+
+    let mut rng = RandomState::new().build_hasher();
+
+    audio.iter().enumerate().map(|(i, &sample)| {
+        i.hash(&mut rng);
+        let noise_val = (rng.finish() as f32 / u64::MAX as f32 - 0.5) * 0.1;
+        let noisy = sample + noise_val;
+        noisy.max(-1.0).min(1.0)
+    }).collect()
 }
 
 criterion_group!(

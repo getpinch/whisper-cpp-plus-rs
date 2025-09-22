@@ -1,5 +1,6 @@
 use std::path::Path;
 use whisper_cpp_rs::{WhisperContext, FullParams, SamplingStrategy};
+use hound;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Check if model exists
@@ -22,11 +23,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  - Text context: {}", ctx.n_text_ctx());
     println!("  - Multilingual: {}", ctx.is_multilingual());
 
-    // Create 3 seconds of silence as test audio
-    println!("\nGenerating test audio (3 seconds of silence)...");
-    let sample_rate = 16000;
-    let duration_seconds = 3;
-    let audio = vec![0.0f32; sample_rate * duration_seconds];
+    // Load real audio for testing
+    println!("\nLoading test audio...");
+    let audio_path = "vendor/whisper.cpp/samples/jfk.wav";
+    let audio = if Path::new(audio_path).exists() {
+        println!("Loading audio from: {}", audio_path);
+        load_wav_file(audio_path)?
+    } else {
+        eprintln!("Error: Audio file not found at {}", audio_path);
+        eprintln!("Please ensure whisper.cpp repository is in vendor/ with sample files.");
+        eprintln!("Or provide your own audio file at samples/test.wav");
+
+        // Try alternative path
+        let alt_path = "samples/test.wav";
+        if Path::new(alt_path).exists() {
+            println!("Loading alternative audio from: {}", alt_path);
+            load_wav_file(alt_path)?
+        } else {
+            return Err(format!("No audio files found. Please provide audio at:\n  - {}\n  - {}", audio_path, alt_path).into());
+        }
+    };
 
     // Transcribe with default parameters
     println!("Transcribing with default parameters...");
@@ -59,4 +75,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nSuccess! The whisper.cpp Rust wrapper is working correctly.");
 
     Ok(())
+}
+
+fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let mut reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+
+    // Check format
+    if spec.sample_rate != 16000 {
+        eprintln!("Warning: Audio sample rate is {}Hz, expected 16000Hz", spec.sample_rate);
+    }
+
+    if spec.channels != 1 {
+        eprintln!("Warning: Audio has {} channels, using first channel only", spec.channels);
+    }
+
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
+        .step_by(spec.channels as usize)
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
+
+    Ok(samples)
 }

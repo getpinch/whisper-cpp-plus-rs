@@ -169,56 +169,53 @@ fn demonstrate_direct_enhanced_state(
 }
 
 fn load_audio_examples() -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
-    // Check for actual audio files
+    // Try to use real audio files from whisper.cpp samples or user-provided samples
+    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
     let clear_path = "samples/clear_speech.wav";
     let noisy_path = "samples/noisy_speech.wav";
 
-    let clear_audio = if Path::new(clear_path).exists() {
+    // Use JFK audio as the clear sample if available
+    let clear_audio = if Path::new(jfk_path).exists() {
+        println!("Loading clear audio from: {}", jfk_path);
+        load_wav_file(jfk_path)?
+    } else if Path::new(clear_path).exists() {
         println!("Loading clear audio from: {}", clear_path);
         load_wav_file(clear_path)?
     } else {
-        println!("Generating synthetic clear audio...");
-        generate_clear_synthetic_audio()
+        eprintln!("\nError: No audio files found!");
+        eprintln!("Please provide one of the following:");
+        eprintln!("  1. {} (JFK sample from whisper.cpp)", jfk_path);
+        eprintln!("  2. {} (custom clear speech sample)", clear_path);
+        eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful speech.");
+        return Err("No audio files found".into());
     };
 
+    // For noisy audio, try to load from file or create a noisy version of clear audio
     let noisy_audio = if Path::new(noisy_path).exists() {
         println!("Loading noisy audio from: {}", noisy_path);
         load_wav_file(noisy_path)?
     } else {
-        println!("Generating synthetic noisy audio...");
-        generate_noisy_synthetic_audio()
+        println!("\nNote: No noisy audio sample found at {}", noisy_path);
+        println!("Creating noisy version from clear audio for demonstration...");
+        add_noise_to_audio(&clear_audio)
     };
 
     Ok((clear_audio, noisy_audio))
 }
 
-fn generate_clear_synthetic_audio() -> Vec<f32> {
-    // Generate clean synthetic audio (would be actual speech in practice)
-    let sample_rate = 16000;
-    let duration = 3;
-    let mut audio = Vec::with_capacity(sample_rate * duration);
+fn add_noise_to_audio(audio: &[f32]) -> Vec<f32> {
+    // Add noise to existing audio to simulate noisy conditions
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
 
-    // Simple sine wave modulated to simulate speech patterns
-    for i in 0..sample_rate * duration {
-        let t = i as f32 / sample_rate as f32;
-        let freq = 200.0 + 100.0 * (t * 2.0).sin(); // Varying frequency
-        let amplitude = 0.3 * (1.0 + 0.5 * (t * 3.0).cos()); // Varying amplitude
-        let sample = amplitude * (2.0 * std::f32::consts::PI * freq * t).sin();
-        audio.push(sample);
-    }
+    let mut rng = RandomState::new().build_hasher();
 
-    audio
-}
-
-fn generate_noisy_synthetic_audio() -> Vec<f32> {
-    // Generate noisy synthetic audio (would be actual noisy speech in practice)
-    let clear = generate_clear_synthetic_audio();
-
-    // Add noise
-    clear.iter().map(|&sample| {
-        let noise = (rand::random::<f32>() - 0.5) * 0.2; // Random noise
-        let clipped = (sample + noise).max(-1.0).min(1.0); // Clip to valid range
-        clipped
+    audio.iter().enumerate().map(|(i, &sample)| {
+        // Simple pseudo-random noise generation
+        i.hash(&mut rng);
+        let noise_val = (rng.finish() as f32 / u64::MAX as f32 - 0.5) * 0.15; // Lower noise level
+        let noisy = sample + noise_val;
+        noisy.max(-1.0).min(1.0) // Clip to valid range
     }).collect()
 }
 
@@ -246,8 +243,3 @@ fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     Ok(samples)
 }
 
-// Fallback for rand if not available
-#[cfg(not(feature = "rand"))]
-fn rand_random() -> f32 {
-    0.5
-}
