@@ -379,3 +379,4 @@ When implementing any enhancement phase, remember:
 - CTranslate2: https://github.com/OpenNMT/CTranslate2
 - whisper.cpp: https://github.com/ggerganov/whisper.cpp
 - Original analysis: faster-whisper-python-analysis.md
+- Full faster whisper codebase should be used for research and reference: D:\projects\claude\faster-whisper-python
