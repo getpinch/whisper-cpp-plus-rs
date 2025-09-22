@@ -119,7 +119,8 @@ fn build_whisper_cpp(target_os: &str, target_arch: &str) {
         .include("../vendor/whisper.cpp/include")
         .include("../vendor/whisper.cpp/ggml/include")
         .include("../vendor/whisper.cpp/ggml/src")
-        .include("../vendor/whisper.cpp/ggml/src/ggml-cpu");
+        .include("../vendor/whisper.cpp/ggml/src/ggml-cpu")
+        .include("../vendor/whisper.cpp/examples");
 
     // Core source files
     build.file("../vendor/whisper.cpp/src/whisper.cpp")
@@ -133,6 +134,10 @@ fn build_whisper_cpp(target_os: &str, target_arch: &str) {
         .file("../vendor/whisper.cpp/ggml/src/ggml-quants.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-opt.cpp")
         .file("../vendor/whisper.cpp/ggml/src/gguf.cpp")
+        // Quantization support files
+        .file("../vendor/whisper.cpp/examples/common.cpp")
+        .file("../vendor/whisper.cpp/examples/common-ggml.cpp")
+        .file("src/quantize_wrapper.cpp")
         // CPU backend core files
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp")

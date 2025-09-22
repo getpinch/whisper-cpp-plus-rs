@@ -488,6 +488,108 @@ Convert PyTorch models to GGML format:
 python convert-pt-to-ggml.py path/to/pytorch/model.pt
 ```
 
+## Model Quantization
+
+The library provides built-in support for quantizing Whisper models to reduce their size and improve inference speed on CPU. Quantization can reduce model sizes by 70-80% while maintaining reasonable accuracy.
+
+### Available Quantization Types
+
+| Type | Size Reduction | Speed | Quality | Best For |
+|------|---------------|--------|---------|----------|
+| Q4_0 | ~69% smaller | Fastest | Good | Mobile/embedded devices |
+| Q4_1 | ~65% smaller | Fast | Good | Mobile with better quality |
+| Q5_0 | ~61% smaller | Fast | Better | Balance of size and quality |
+| Q5_1 | ~57% smaller | Fast | Better | Better quality, still compact |
+| Q8_0 | ~31% smaller | Good | Best | Desktop, quality-focused |
+| Q4_K | ~67% smaller | Fast | Good | Modern CPUs with AVX2 |
+| Q5_K | ~59% smaller | Fast | Better | Balance for modern CPUs |
+| Q6_K | ~51% smaller | Good | Better | Quality-focused, modern CPUs |
+
+### Basic Usage
+
+```rust
+use whisper_cpp_rs::{WhisperContext, QuantizationType};
+
+// Method 1: Using WhisperContext (convenience method)
+WhisperContext::quantize_model(
+    "models/ggml-base.bin",
+    "models/ggml-base-q5_0.bin",
+    QuantizationType::Q5_0
+)?;
+
+// Method 2: Using ModelQuantizer directly
+use whisper_cpp_rs::ModelQuantizer;
+
+ModelQuantizer::quantize_model_file(
+    "models/ggml-base.bin",
+    "models/ggml-base-q4_0.bin",
+    QuantizationType::Q4_0
+)?;
+```
+
+### Quantization with Progress Tracking
+
+```rust
+use whisper_cpp_rs::{ModelQuantizer, QuantizationType};
+
+ModelQuantizer::quantize_model_file_with_progress(
+    "models/ggml-large-v3.bin",
+    "models/ggml-large-v3-q5_k.bin",
+    QuantizationType::Q5_K,
+    |progress| {
+        println!("Quantization progress: {:.1}%", progress * 100.0);
+    }
+)?;
+```
+
+### Checking Model Quantization
+
+```rust
+use whisper_cpp_rs::ModelQuantizer;
+
+// Check if a model is quantized and get its type
+match ModelQuantizer::get_model_quantization_type("models/ggml-base-q5_0.bin")? {
+    Some(qtype) => println!("Model is quantized as: {}", qtype),
+    None => println!("Model is in full precision (F32/F16)"),
+}
+
+// Estimate quantized model size before quantization
+let estimated_size = ModelQuantizer::estimate_quantized_size(
+    "models/ggml-base.bin",
+    QuantizationType::Q4_0
+)?;
+println!("Estimated size after Q4_0: {} MB", estimated_size / 1024 / 1024);
+```
+
+### Size Comparison Example
+
+For a base model (~142 MB):
+
+| Format | Size | Reduction |
+|--------|------|-----------|
+| Original (F16) | 142 MB | - |
+| Q8_0 | 98 MB | 31% |
+| Q5_1 | 61 MB | 57% |
+| Q5_0 | 55 MB | 61% |
+| Q4_1 | 50 MB | 65% |
+| Q4_0 | 44 MB | 69% |
+| Q4_K | 47 MB | 67% |
+
+### Choosing the Right Quantization
+
+- **Q4_0/Q4_K**: Best for resource-constrained environments (mobile, Raspberry Pi)
+- **Q5_0/Q5_K**: Good balance between size and quality for general use
+- **Q8_0**: When quality is important but some size reduction is needed
+- **Q6_K**: Best quality among K-quants, good for modern desktop CPUs
+
+### Performance Impact
+
+Quantized models typically offer:
+- **2-4x faster inference** on CPU (especially Q4_0)
+- **60-70% memory savings** (Q4_0/Q4_K)
+- **~1-3% accuracy loss** for Q5_0 and above
+- **~3-5% accuracy loss** for Q4_0/Q4_1
+
 ## Safety & Thread Safety
 
 ### Thread Safety Guarantees

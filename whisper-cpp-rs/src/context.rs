@@ -1,4 +1,5 @@
 use crate::error::{Result, WhisperError};
+use crate::quantize::{ModelQuantizer, QuantizationType};
 use std::path::Path;
 use std::sync::Arc;
 use whisper_sys as ffi;
@@ -87,6 +88,34 @@ impl WhisperContext {
 
     pub fn n_len(&self) -> i32 {
         unsafe { ffi::whisper_n_len(self.ptr.0) }
+    }
+
+    /// Quantize a Whisper model file (static method)
+    ///
+    /// This is a convenience method for quantizing models without needing to
+    /// create a WhisperContext instance.
+    ///
+    /// # Arguments
+    /// * `input_path` - Path to the input model file
+    /// * `output_path` - Path where the quantized model will be saved
+    /// * `qtype` - The quantization type to use
+    ///
+    /// # Example
+    /// ```no_run
+    /// use whisper_cpp_rs::{WhisperContext, QuantizationType};
+    ///
+    /// WhisperContext::quantize_model(
+    ///     "models/ggml-base.bin",
+    ///     "models/ggml-base-q5_0.bin",
+    ///     QuantizationType::Q5_0
+    /// ).expect("Failed to quantize model");
+    /// ```
+    pub fn quantize_model<P: AsRef<Path>>(
+        input_path: P,
+        output_path: P,
+        qtype: QuantizationType,
+    ) -> Result<()> {
+        ModelQuantizer::quantize_model_file(input_path, output_path, qtype)
     }
 }
 
