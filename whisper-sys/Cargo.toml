@@ -17,6 +17,7 @@ bindgen = "0.69"
 
 [features]
 default = []
+quantization = []
 cuda = []
 metal = []
 openblas = []

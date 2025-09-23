@@ -11,19 +11,33 @@ A safe, high-performance Rust wrapper for [whisper.cpp](https://github.com/ggerg
 
 ```rust
 use whisper_cpp_rs::WhisperContext;
+use hound;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load a model
+    // Load a model (use quantized models for better performance)
     let ctx = WhisperContext::new("models/ggml-base.en.bin")?;
 
-    // Load audio (must be 16KHz mono f32 samples)
-    let audio = load_audio("audio.wav")?;
+    // Load audio from WAV file (must be 16KHz mono f32 samples)
+    let audio = load_audio_from_wav("audio.wav")?;
 
     // Transcribe
     let text = ctx.transcribe(&audio)?;
-    println!("{}", text);
+    println!("Transcription: {}", text);
 
     Ok(())
+}
+
+fn load_audio_from_wav(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+
+    // Convert to 16kHz mono f32 if needed
+    let samples: Vec<f32> = reader
+        .into_samples::<i16>()
+        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+        .collect();
+
+    Ok(samples)
 }
 ```
 
@@ -46,15 +60,19 @@ Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 whisper-cpp-rs = "0.1.0"
-# For loading audio files (optional)
+
+# Optional: For loading audio files
 hound = "3.5"
+
+# Optional: For quantizing models (reduces size by 50-75%)
+whisper-quantize = "0.1.0"
 ```
 
 ### System Requirements
 
 - Rust 1.70.0 or later
 - C++ compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
-- ~1-5GB disk space for models
+- ~1-5GB disk space for models (or 0.3-1.5GB with quantization)
 
 ### Downloading Models
 
@@ -68,6 +86,46 @@ curl -L -o models/ggml-base.en.bin \
 # Other models available:
 # tiny.en (39MB), small.en (466MB), medium.en (1.5GB), large-v3 (3.1GB)
 ```
+
+💡 **Tip:** After downloading, use [`whisper-quantize`](./whisper-quantize/README.md) to reduce model size by 50-75%:
+```bash
+# Quantize to Q5_0 (recommended - 70% smaller, minimal quality loss)
+cargo run -p whisper-quantize --example quantize_model -- \
+  models/ggml-base.en.bin models/ggml-base-q5_0.bin q5_0
+```
+
+## Crate Structure
+
+This workspace contains multiple crates for different use cases:
+
+| Crate | Description | Documentation |
+|-------|-------------|---------------|
+| **`whisper-cpp-rs`** | Main high-level Rust bindings for transcription | [API Docs](./whisper-cpp-rs/README.md) |
+| **`whisper-quantize`** | Model quantization utilities (optional) | [README](./whisper-quantize/README.md) |
+| **`whisper-sys`** | Low-level FFI bindings | [API Docs](./whisper-sys/README.md) |
+
+### Model Quantization
+
+Reduce model sizes by 50-75% with the optional `whisper-quantize` crate:
+
+```toml
+[dependencies]
+whisper-cpp-rs = "0.1.0"
+whisper-quantize = "0.1.0"  # Optional: for quantizing models
+```
+
+```rust
+use whisper_quantize::{ModelQuantizer, QuantizationType};
+
+// Quantize to 5-bit (70% size reduction, recommended)
+ModelQuantizer::quantize_model_file(
+    "models/ggml-base.bin",        // 148 MB
+    "models/ggml-base-q5_0.bin",   // ~44 MB
+    QuantizationType::Q5_0
+)?;
+```
+
+📚 **[See whisper-quantize documentation](./whisper-quantize/README.md)** for detailed quantization guides, benchmarks, and best practices.
 
 ## API Overview
 

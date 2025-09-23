@@ -1,0 +1,18 @@
+[package]
+name = "whisper-quantize"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70.0"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/whisper-cpp-rs"
+description = "Model quantization utilities for whisper-cpp-rs"
+keywords = ["whisper", "quantization", "compression", "ml", "optimization"]
+categories = ["science", "compression"]
+
+[dependencies]
+whisper-sys = { path = "../whisper-sys", features = ["quantization"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+# No dependencies needed for tests yet

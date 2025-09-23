@@ -133,12 +133,19 @@ fn build_whisper_cpp(target_os: &str, target_arch: &str) {
         .file("../vendor/whisper.cpp/ggml/src/ggml-threading.cpp")
         .file("../vendor/whisper.cpp/ggml/src/ggml-quants.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-opt.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/gguf.cpp")
-        // Quantization support files
-        .file("../vendor/whisper.cpp/examples/common.cpp")
-        .file("../vendor/whisper.cpp/examples/common-ggml.cpp")
-        .file("src/quantize_wrapper.cpp")
-        // CPU backend core files
+        .file("../vendor/whisper.cpp/ggml/src/gguf.cpp");
+
+    // Conditionally add quantization support
+    #[cfg(feature = "quantization")]
+    {
+        build
+            .file("../vendor/whisper.cpp/examples/common.cpp")
+            .file("../vendor/whisper.cpp/examples/common-ggml.cpp")
+            .file("src/quantize_wrapper.cpp");
+    }
+
+    // CPU backend core files
+    build
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c")
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp")
         .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/binary-ops.cpp")

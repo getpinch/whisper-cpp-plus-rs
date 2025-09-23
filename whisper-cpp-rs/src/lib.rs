@@ -50,7 +50,6 @@ mod buffer;
 mod context;
 mod error;
 mod params;
-mod quantize;
 mod state;
 mod stream;
 mod vad;
@@ -65,7 +64,6 @@ pub use error::{Result, WhisperError};
 pub use params::{
     FullParams, SamplingStrategy, TranscriptionParams, TranscriptionParamsBuilder,
 };
-pub use quantize::{ModelQuantizer, QuantizationType};
 pub use state::{Segment, TranscriptionResult, WhisperState};
 pub use stream::{StreamConfig, StreamConfigBuilder, WhisperStream};
 pub use vad::{

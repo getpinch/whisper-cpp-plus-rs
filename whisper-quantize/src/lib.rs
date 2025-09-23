@@ -8,12 +8,36 @@ use std::ffi::CString;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
+use thiserror::Error;
 
-use crate::error::{WhisperError, Result as WhisperResult};
+/// Error type for quantization operations
+#[derive(Debug, Error)]
+pub enum QuantizeError {
+    #[error("Model file not found: {0}")]
+    FileNotFound(String),
+
+    #[error("Failed to open file: {0}")]
+    FileOpenError(String),
+
+    #[error("Failed to write file: {0}")]
+    FileWriteError(String),
+
+    #[error("Invalid model format")]
+    InvalidModel,
+
+    #[error("Invalid quantization type")]
+    InvalidQuantizationType,
+
+    #[error("Quantization failed: {0}")]
+    QuantizationFailed(String),
+}
+
+type Result<T> = std::result::Result<T, QuantizeError>;
 
 /// Quantization types supported by whisper.cpp
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
+#[allow(non_camel_case_types)]
 pub enum QuantizationType {
     /// 4-bit quantization (method 0) - ~3.5 GB for base model
     Q4_0 = whisper_sys::GGML_FTYPE_MOSTLY_Q4_0,
@@ -148,7 +172,7 @@ impl ModelQuantizer {
         input_path: P,
         output_path: P,
         qtype: QuantizationType,
-    ) -> WhisperResult<()> {
+    ) -> Result<()> {
         Self::quantize_model_file_impl(input_path.as_ref(), output_path.as_ref(), qtype, None)
     }
 
@@ -178,7 +202,7 @@ impl ModelQuantizer {
         output_path: P,
         qtype: QuantizationType,
         callback: F,
-    ) -> WhisperResult<()>
+    ) -> Result<()>
     where
         P: AsRef<Path>,
         F: Fn(f32) + Send + 'static,
@@ -196,11 +220,11 @@ impl ModelQuantizer {
         output_path: &Path,
         qtype: QuantizationType,
         callback: Option<ProgressCallback>,
-    ) -> WhisperResult<()> {
+    ) -> Result<()> {
         // Validate input file exists
         if !input_path.exists() {
-            return Err(WhisperError::ModelLoadError(format!(
-                "Input model file does not exist: {}",
+            return Err(QuantizeError::FileNotFound(format!(
+                "{}",
                 input_path.display()
             )));
         }
@@ -248,30 +272,30 @@ impl ModelQuantizer {
         match result {
             whisper_sys::WHISPER_QUANTIZE_OK => Ok(()),
             whisper_sys::WHISPER_QUANTIZE_ERROR_INVALID_MODEL => {
-                Err(WhisperError::ModelLoadError("Invalid model file".to_string()))
+                Err(QuantizeError::QuantizationFailed("Invalid model file".to_string()))
             }
             whisper_sys::WHISPER_QUANTIZE_ERROR_FILE_OPEN => {
-                Err(WhisperError::ModelLoadError(format!(
+                Err(QuantizeError::QuantizationFailed(format!(
                     "Failed to open input file: {}",
                     input_path.display()
                 )))
             }
             whisper_sys::WHISPER_QUANTIZE_ERROR_FILE_WRITE => {
-                Err(WhisperError::ModelLoadError(format!(
+                Err(QuantizeError::QuantizationFailed(format!(
                     "Failed to write output file: {}",
                     output_path.display()
                 )))
             }
             whisper_sys::WHISPER_QUANTIZE_ERROR_INVALID_FTYPE => {
-                Err(WhisperError::ModelLoadError(format!(
+                Err(QuantizeError::QuantizationFailed(format!(
                     "Invalid quantization type: {}",
                     qtype
                 )))
             }
             whisper_sys::WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED => {
-                Err(WhisperError::ModelLoadError("Quantization failed".to_string()))
+                Err(QuantizeError::QuantizationFailed("Quantization failed".to_string()))
             }
-            _ => Err(WhisperError::ModelLoadError(format!(
+            _ => Err(QuantizeError::QuantizationFailed(format!(
                 "Unknown quantization error: {}",
                 result
             ))),
@@ -300,12 +324,12 @@ impl ModelQuantizer {
     /// ```
     pub fn get_model_quantization_type<P: AsRef<Path>>(
         model_path: P,
-    ) -> WhisperResult<Option<QuantizationType>> {
+    ) -> Result<Option<QuantizationType>> {
         let path = model_path.as_ref();
 
         if !path.exists() {
-            return Err(WhisperError::ModelLoadError(format!(
-                "Model file does not exist: {}",
+            return Err(QuantizeError::FileNotFound(format!(
+                "{}",
                 path.display()
             )));
         }
@@ -317,8 +341,8 @@ impl ModelQuantizer {
         };
 
         if ftype < 0 {
-            return Err(WhisperError::ModelLoadError(format!(
-                "Failed to read model file: {}",
+            return Err(QuantizeError::FileOpenError(format!(
+                "{}",
                 path.display()
             )));
         }
@@ -370,10 +394,10 @@ impl ModelQuantizer {
     pub fn estimate_quantized_size<P: AsRef<Path>>(
         model_path: P,
         qtype: QuantizationType,
-    ) -> WhisperResult<u64> {
+    ) -> Result<u64> {
         let path = model_path.as_ref();
         let metadata = std::fs::metadata(path)
-            .map_err(|e| WhisperError::ModelLoadError(format!("Failed to read model file: {}", e)))?;
+            .map_err(|e| QuantizeError::QuantizationFailed(format!("Failed to read model file: {}", e)))?;
 
         let original_size = metadata.len();
         let estimated_size = (original_size as f64 * qtype.size_factor() as f64) as u64;
@@ -400,12 +424,12 @@ extern "C" fn quantize_progress_callback(progress: f32) {
 }
 
 // Helper function to convert Path to CString
-fn path_to_cstring(path: &Path) -> WhisperResult<CString> {
+fn path_to_cstring(path: &Path) -> Result<CString> {
     let path_str = path.to_str()
-        .ok_or_else(|| WhisperError::ModelLoadError("Invalid UTF-8 in path".to_string()))?;
+        .ok_or_else(|| QuantizeError::QuantizationFailed("Invalid UTF-8 in path".to_string()))?;
 
     CString::new(path_str)
-        .map_err(|_| WhisperError::ModelLoadError("Path contains null byte".to_string()))
+        .map_err(|_| QuantizeError::QuantizationFailed("Path contains null byte".to_string()))
 }
 
 #[cfg(test)]

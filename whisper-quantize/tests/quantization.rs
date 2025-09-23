@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::Path;
-use whisper_cpp_rs::{ModelQuantizer, QuantizationType, WhisperContext};
+use whisper_quantize::{ModelQuantizer, QuantizationType};
 
 /// Helper to check if test models are available
 fn test_models_available() -> bool {

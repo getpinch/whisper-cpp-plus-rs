@@ -14,11 +14,17 @@ pub const WHISPER_ERR_FAILED_TO_PROCESS: i32 = -3;
 pub const WHISPER_ERR_INVALID_CONTEXT: i32 = -4;
 
 // Quantization-related constants and functions
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_OK: i32 = 0;
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_ERROR_INVALID_MODEL: i32 = -1;
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_ERROR_FILE_OPEN: i32 = -2;
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_ERROR_FILE_WRITE: i32 = -3;
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_ERROR_INVALID_FTYPE: i32 = -4;
+#[cfg(feature = "quantization")]
 pub const WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED: i32 = -5;
 
 // GGML quantization types
@@ -38,8 +44,10 @@ pub const GGML_FTYPE_MOSTLY_Q5_K: i32 = 13;
 pub const GGML_FTYPE_MOSTLY_Q6_K: i32 = 14;
 
 // Progress callback type
+#[cfg(feature = "quantization")]
 pub type whisper_quantize_progress_callback = Option<extern "C" fn(progress: f32)>;
 
+#[cfg(feature = "quantization")]
 extern "C" {
     /// Quantize a Whisper model file
     ///
