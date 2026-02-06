@@ -1,3 +1,4 @@
 [submodule "vendor/whisper.cpp"]
 	path = vendor/whisper.cpp
-	url = https://github.com/ggerganov/whisper.cpp
+	url = git@github.com:rmorse/whisper.cpp.git
+	branch = stream-pcm
