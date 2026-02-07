@@ -78,7 +78,7 @@ pub use vad::{
     VadContextParams, VadParams, VadParamsBuilder, WhisperVadProcessor, VadSegments,
 };
 #[cfg(feature = "quantization")]
-pub use quantize::{ModelQuantizer, QuantizationType, QuantizeError};
+pub use quantize::{WhisperQuantize, QuantizationType, QuantizeError};
 
 // Re-export for benchmarks
 #[doc(hidden)]

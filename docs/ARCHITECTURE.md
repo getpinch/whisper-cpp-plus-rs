@@ -47,7 +47,7 @@ whisper-cpp-plus/src/
 ├── stream.rs           # WhisperStream (chunk-based streaming)
 ├── stream_pcm.rs       # WhisperStreamPcm (port of stream-pcm.cpp)
 ├── vad.rs              # WhisperVadProcessor (Silero VAD via whisper.cpp)
-├── quantize.rs         # ModelQuantizer (feature = "quantization")
+├── quantize.rs         # WhisperQuantize (feature = "quantization")
 ├── async_api.rs        # spawn_blocking wrappers (feature = "async")
 └── enhanced/
     ├── mod.rs

@@ -6,8 +6,7 @@ mod common;
 
 use common::TestModels;
 use std::fs;
-use std::path::Path;
-use whisper_cpp_plus::{ModelQuantizer, QuantizationType};
+use whisper_cpp_plus::{WhisperQuantize, QuantizationType};
 
 #[test]
 fn test_quantization_types() {
@@ -35,15 +34,15 @@ fn test_quantization_types() {
 
 #[test]
 fn test_quantization_type_parsing() {
-    assert_eq!(QuantizationType::from_str("Q4_0"), Some(QuantizationType::Q4_0));
-    assert_eq!(QuantizationType::from_str("q4_0"), Some(QuantizationType::Q4_0));
-    assert_eq!(QuantizationType::from_str("Q40"), Some(QuantizationType::Q4_0));
+    assert_eq!("Q4_0".parse::<QuantizationType>().unwrap(), QuantizationType::Q4_0);
+    assert_eq!("q4_0".parse::<QuantizationType>().unwrap(), QuantizationType::Q4_0);
+    assert_eq!("Q40".parse::<QuantizationType>().unwrap(), QuantizationType::Q4_0);
 
-    assert_eq!(QuantizationType::from_str("Q5_K"), Some(QuantizationType::Q5_K));
-    assert_eq!(QuantizationType::from_str("q5k"), Some(QuantizationType::Q5_K));
+    assert_eq!("Q5_K".parse::<QuantizationType>().unwrap(), QuantizationType::Q5_K);
+    assert_eq!("q5k".parse::<QuantizationType>().unwrap(), QuantizationType::Q5_K);
 
-    assert_eq!(QuantizationType::from_str("invalid"), None);
-    assert_eq!(QuantizationType::from_str(""), None);
+    assert!("invalid".parse::<QuantizationType>().is_err());
+    assert!("".parse::<QuantizationType>().is_err());
 }
 
 #[test]
@@ -62,7 +61,7 @@ fn test_quantize_model() {
     let output_path = model_path.with_file_name("ggml-tiny.en-q5_0.bin");
     let _ = fs::remove_file(&output_path);
 
-    let result = ModelQuantizer::quantize_model_file(
+    let result = WhisperQuantize::quantize_model_file(
         model_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         QuantizationType::Q5_0,
@@ -81,6 +80,9 @@ fn test_quantize_model() {
 
 #[test]
 fn test_quantize_with_progress() {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
     let Some(model_path) = TestModels::tiny_en() else {
         eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
@@ -89,17 +91,28 @@ fn test_quantize_with_progress() {
     let output_path = model_path.with_file_name("ggml-tiny.en-q4_0.bin");
     let _ = fs::remove_file(&output_path);
 
-    let result = ModelQuantizer::quantize_model_file_with_progress(
+    let call_count = Arc::new(AtomicU32::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+
+    let result = WhisperQuantize::quantize_model_file_with_progress(
         model_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         QuantizationType::Q4_0,
-        |progress| {
-            assert!(progress >= 0.0 && progress <= 1.0, "Invalid progress value");
+        move |progress| {
+            assert!(progress >= 0.0 && progress <= 1.0, "Invalid progress value: {}", progress);
+            call_count_clone.fetch_add(1, Ordering::Relaxed);
         },
     );
 
     assert!(result.is_ok(), "Quantization failed: {:?}", result);
     assert!(output_path.exists(), "Output file was not created");
+
+    let total_calls = call_count.load(Ordering::Relaxed);
+    // Per-tensor progress: should fire many more than 2 times
+    // (tiny model has ~50+ tensors, plus the initial 0.0 callback)
+    assert!(total_calls > 2,
+        "Expected per-tensor progress (>2 calls), got {} calls", total_calls);
+    eprintln!("Progress callback fired {} times", total_calls);
 
     let _ = fs::remove_file(&output_path);
 }
@@ -111,7 +124,7 @@ fn test_get_model_quantization_type() {
         return;
     };
 
-    let result = ModelQuantizer::get_model_quantization_type(model_path.to_str().unwrap());
+    let result = WhisperQuantize::get_model_quantization_type(model_path.to_str().unwrap());
     assert!(result.is_ok(), "Failed to check model type: {:?}", result);
 
     match result.unwrap() {
@@ -130,7 +143,7 @@ fn test_estimate_quantized_size() {
     let original_size = fs::metadata(&model_path).unwrap().len();
 
     for qtype in QuantizationType::all() {
-        let estimated = ModelQuantizer::estimate_quantized_size(model_path.to_str().unwrap(), *qtype).unwrap();
+        let estimated = WhisperQuantize::estimate_quantized_size(model_path.to_str().unwrap(), *qtype).unwrap();
 
         assert!(estimated < original_size,
             "{} estimation {} >= original {}", qtype, estimated, original_size);
@@ -151,17 +164,17 @@ fn test_estimate_quantized_size() {
 
 #[test]
 fn test_error_handling() {
-    let result = ModelQuantizer::quantize_model_file(
+    let result = WhisperQuantize::quantize_model_file(
         "non_existent_model.bin",
         "output.bin",
         QuantizationType::Q4_0,
     );
     assert!(result.is_err(), "Should fail with non-existent input");
 
-    let result = ModelQuantizer::get_model_quantization_type("non_existent.bin");
+    let result = WhisperQuantize::get_model_quantization_type("non_existent.bin");
     assert!(result.is_err(), "Should fail with non-existent file");
 
-    let result = ModelQuantizer::estimate_quantized_size(
+    let result = WhisperQuantize::estimate_quantized_size(
         "non_existent.bin",
         QuantizationType::Q5_0
     );

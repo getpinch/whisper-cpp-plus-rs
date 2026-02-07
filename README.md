@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Temperature fallback** — quality-based retry with multiple temperatures
 - **Async** — `tokio::spawn_blocking` wrappers (feature = `async`)
 - **Cross-platform** — Windows (MSVC), Linux, macOS (Intel & Apple Silicon)
-- **Quantization** — model compression via `ModelQuantizer` (feature = `quantization`)
+- **Quantization** — model compression via `WhisperQuantize` (feature = `quantization`)
 - **Hardware acceleration** — SIMD auto-detected, GPU via feature flags
 
 ## Installation
@@ -83,7 +83,7 @@ Model quantization available via `features = ["quantization"]`.
 | `WhisperVadProcessor` | Silero voice activity detection | `whisper_vad_*` |
 | `EnhancedWhisperVadProcessor` | VAD + segment aggregation | — |
 | `EnhancedWhisperState` | Transcription with temperature fallback | — |
-| `ModelQuantizer` | Model quantization (feature) | `quantize.cpp` |
+| `WhisperQuantize` | Model quantization (feature) | `quantize.cpp` |
 
 ### Examples
 

@@ -127,20 +127,24 @@ impl QuantizationType {
         ]
     }
 
-    /// Parse a quantization type from a string
-    pub fn from_str(s: &str) -> Option<Self> {
+}
+
+impl std::str::FromStr for QuantizationType {
+    type Err = QuantizeError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_uppercase().as_str() {
-            "Q4_0" | "Q40" => Some(Self::Q4_0),
-            "Q4_1" | "Q41" => Some(Self::Q4_1),
-            "Q5_0" | "Q50" => Some(Self::Q5_0),
-            "Q5_1" | "Q51" => Some(Self::Q5_1),
-            "Q8_0" | "Q80" => Some(Self::Q8_0),
-            "Q2_K" | "Q2K" => Some(Self::Q2_K),
-            "Q3_K" | "Q3K" => Some(Self::Q3_K),
-            "Q4_K" | "Q4K" => Some(Self::Q4_K),
-            "Q5_K" | "Q5K" => Some(Self::Q5_K),
-            "Q6_K" | "Q6K" => Some(Self::Q6_K),
-            _ => None,
+            "Q4_0" | "Q40" => Ok(Self::Q4_0),
+            "Q4_1" | "Q41" => Ok(Self::Q4_1),
+            "Q5_0" | "Q50" => Ok(Self::Q5_0),
+            "Q5_1" | "Q51" => Ok(Self::Q5_1),
+            "Q8_0" | "Q80" => Ok(Self::Q8_0),
+            "Q2_K" | "Q2K" => Ok(Self::Q2_K),
+            "Q3_K" | "Q3K" => Ok(Self::Q3_K),
+            "Q4_K" | "Q4K" => Ok(Self::Q4_K),
+            "Q5_K" | "Q5K" => Ok(Self::Q5_K),
+            "Q6_K" | "Q6K" => Ok(Self::Q6_K),
+            _ => Err(QuantizeError::InvalidQuantizationType),
         }
     }
 }
@@ -155,9 +159,9 @@ impl std::fmt::Display for QuantizationType {
 pub type ProgressCallback = Box<dyn Fn(f32) + Send>;
 
 /// Model quantizer for converting Whisper models to different quantization formats
-pub struct ModelQuantizer;
+pub struct WhisperQuantize;
 
-impl ModelQuantizer {
+impl WhisperQuantize {
     /// Quantize a model file to a specified quantization type
     ///
     /// # Arguments
@@ -167,9 +171,9 @@ impl ModelQuantizer {
     ///
     /// # Example
     /// ```no_run
-    /// use whisper_cpp_plus::{ModelQuantizer, QuantizationType};
+    /// use whisper_cpp_plus::{WhisperQuantize, QuantizationType};
     ///
-    /// ModelQuantizer::quantize_model_file(
+    /// WhisperQuantize::quantize_model_file(
     ///     "models/ggml-base.bin",
     ///     "models/ggml-base-q5_0.bin",
     ///     QuantizationType::Q5_0
@@ -193,9 +197,9 @@ impl ModelQuantizer {
     ///
     /// # Example
     /// ```no_run
-    /// use whisper_cpp_plus::{ModelQuantizer, QuantizationType};
+    /// use whisper_cpp_plus::{WhisperQuantize, QuantizationType};
     ///
-    /// ModelQuantizer::quantize_model_file_with_progress(
+    /// WhisperQuantize::quantize_model_file_with_progress(
     ///     "models/ggml-base.bin",
     ///     "models/ggml-base-q4_0.bin",
     ///     QuantizationType::Q4_0,
@@ -318,9 +322,9 @@ impl ModelQuantizer {
     ///
     /// # Example
     /// ```no_run
-    /// use whisper_cpp_plus::ModelQuantizer;
+    /// use whisper_cpp_plus::WhisperQuantize;
     ///
-    /// match ModelQuantizer::get_model_quantization_type("models/ggml-base-q5_0.bin") {
+    /// match WhisperQuantize::get_model_quantization_type("models/ggml-base-q5_0.bin") {
     ///     Ok(Some(qtype)) => println!("Model is quantized as: {}", qtype),
     ///     Ok(None) => println!("Model is not quantized"),
     ///     Err(e) => println!("Error reading model: {}", e),
@@ -378,9 +382,9 @@ impl ModelQuantizer {
     ///
     /// # Example
     /// ```no_run
-    /// use whisper_cpp_plus::{ModelQuantizer, QuantizationType};
+    /// use whisper_cpp_plus::{WhisperQuantize, QuantizationType};
     ///
-    /// let estimated_size = ModelQuantizer::estimate_quantized_size(
+    /// let estimated_size = WhisperQuantize::estimate_quantized_size(
     ///     "models/ggml-base.bin",
     ///     QuantizationType::Q5_0
     /// ).unwrap_or(0);
@@ -442,11 +446,11 @@ mod tests {
 
     #[test]
     fn test_quantization_type_from_str() {
-        assert_eq!(QuantizationType::from_str("q4_0"), Some(QuantizationType::Q4_0));
-        assert_eq!(QuantizationType::from_str("Q5_1"), Some(QuantizationType::Q5_1));
-        assert_eq!(QuantizationType::from_str("q8_0"), Some(QuantizationType::Q8_0));
-        assert_eq!(QuantizationType::from_str("Q3K"), Some(QuantizationType::Q3_K));
-        assert_eq!(QuantizationType::from_str("invalid"), None);
+        assert_eq!("q4_0".parse::<QuantizationType>().unwrap(), QuantizationType::Q4_0);
+        assert_eq!("Q5_1".parse::<QuantizationType>().unwrap(), QuantizationType::Q5_1);
+        assert_eq!("q8_0".parse::<QuantizationType>().unwrap(), QuantizationType::Q8_0);
+        assert_eq!("Q3K".parse::<QuantizationType>().unwrap(), QuantizationType::Q3_K);
+        assert!("invalid".parse::<QuantizationType>().is_err());
     }
 
     #[test]

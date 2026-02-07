@@ -1,14 +1,8 @@
 #include "ggml.h"
-#include "ggml-backend.h"
-#include "common.h"
-#include "common-ggml.h"
 
-#include <cassert>
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <map>
 #include <string>
 #include <vector>
 #include <regex>
@@ -143,15 +137,11 @@ static int whisper_model_quantize_internal(
         fout.write((char *) filters.data.data(), filters.data.size() * sizeof(float));
     }
 
-    // Load vocab - just copy it without parsing
+    // Load vocab - just copy bytes through
     {
         int32_t n_vocab = 0;
         finp.read ((char *) &n_vocab, sizeof(n_vocab));
         fout.write((char *) &n_vocab, sizeof(n_vocab));
-
-        // Create temporary vocab for ggml_common_quantize_0
-        std::map<std::string, int32_t> token_to_id;
-        std::map<int32_t, std::string> id_to_token;
 
         char word[129];
 
@@ -160,23 +150,13 @@ static int whisper_model_quantize_internal(
             finp.read ((char *) &len, sizeof(len));
             fout.write((char *) &len, sizeof(len));
 
-            word[len] = '\0';
-
             finp.read ((char *) word, len);
             fout.write((char *) word, len);
-
-            // Store in temporary maps (not used by quantization)
-            token_to_id[word] = i;
-            id_to_token[i] = word;
         }
     }
 
-    // Report progress if callback provided
-    if (progress_callback) {
-        progress_callback(0.1f); // 10% after loading headers
-    }
-
     // Regexes of tensor names to not be quantized
+    const std::vector<std::string> to_quant = { ".*" };
     const std::vector<std::string> to_skip = {
         //"encoder.*",
         "encoder.conv1.bias",
@@ -185,15 +165,238 @@ static int whisper_model_quantize_internal(
         "decoder.positional_embedding",
     };
 
-    // Perform quantization
-    if (!ggml_common_quantize_0(finp, fout, ftype, { ".*" }, to_skip)) {
-        fprintf(stderr, "%s: failed to quantize model '%s'\n", __func__, fname_inp.c_str());
+    // --- First pass: count tensors ---
+    const auto tensors_start_pos = finp.tellg();
+    int total_tensors = 0;
+    {
+        while (true) {
+            int32_t n_dims;
+            int32_t length;
+            int32_t ttype;
+
+            finp.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
+            finp.read(reinterpret_cast<char *>(&length), sizeof(length));
+            finp.read(reinterpret_cast<char *>(&ttype),  sizeof(ttype));
+
+            if (finp.eof()) {
+                break;
+            }
+
+            // Skip dimension values
+            int32_t nelements = 1;
+            int32_t ne[4] = { 1, 1, 1, 1 };
+            for (int i = 0; i < n_dims; ++i) {
+                finp.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
+                nelements *= ne[i];
+            }
+
+            // Skip tensor name
+            finp.seekg(length, std::ios::cur);
+
+            // Skip tensor data
+            const int bpe = (ttype == 0) ? sizeof(float) : sizeof(uint16_t);
+            finp.seekg((std::streamoff)nelements * bpe, std::ios::cur);
+
+            total_tensors++;
+        }
+
+        // Seek back to start of tensors
+        finp.clear(); // clear EOF flag
+        finp.seekg(tensors_start_pos);
+    }
+
+    fprintf(stderr, "%s: found %d tensors to process\n", __func__, total_tensors);
+
+    if (progress_callback) {
+        progress_callback(0.0f);
+    }
+
+    // --- Second pass: quantize with per-tensor progress ---
+
+    // Resolve target quantization type
+    ggml_type qtype = GGML_TYPE_F32;
+
+    switch (ftype) {
+        case GGML_FTYPE_MOSTLY_Q4_0: qtype = GGML_TYPE_Q4_0; break;
+        case GGML_FTYPE_MOSTLY_Q4_1: qtype = GGML_TYPE_Q4_1; break;
+        case GGML_FTYPE_MOSTLY_Q5_0: qtype = GGML_TYPE_Q5_0; break;
+        case GGML_FTYPE_MOSTLY_Q5_1: qtype = GGML_TYPE_Q5_1; break;
+        case GGML_FTYPE_MOSTLY_Q8_0: qtype = GGML_TYPE_Q8_0; break;
+        case GGML_FTYPE_MOSTLY_Q2_K: qtype = GGML_TYPE_Q2_K; break;
+        case GGML_FTYPE_MOSTLY_Q3_K: qtype = GGML_TYPE_Q3_K; break;
+        case GGML_FTYPE_MOSTLY_Q4_K: qtype = GGML_TYPE_Q4_K; break;
+        case GGML_FTYPE_MOSTLY_Q5_K: qtype = GGML_TYPE_Q5_K; break;
+        case GGML_FTYPE_MOSTLY_Q6_K: qtype = GGML_TYPE_Q6_K; break;
+        default: {
+            fprintf(stderr, "%s: invalid model type %d\n", __func__, ftype);
+            return WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED;
+        }
+    }
+
+    if (!ggml_is_quantized(qtype)) {
+        fprintf(stderr, "%s: invalid quantization type %d (%s)\n", __func__, qtype, ggml_type_name(qtype));
         return WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED;
     }
 
-    if (progress_callback) {
-        progress_callback(1.0f); // 100% complete
+    size_t total_size_org = 0;
+    size_t total_size_new = 0;
+
+    std::vector<float> work;
+
+    std::vector<uint8_t>     data_u8;
+    std::vector<ggml_fp16_t> data_f16;
+    std::vector<float>       data_f32;
+
+    int tensor_idx = 0;
+
+    while (true) {
+        int32_t n_dims;
+        int32_t length;
+        int32_t ttype;
+
+        finp.read(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
+        finp.read(reinterpret_cast<char *>(&length), sizeof(length));
+        finp.read(reinterpret_cast<char *>(&ttype),  sizeof(ttype));
+
+        if (finp.eof()) {
+            break;
+        }
+
+        int32_t nelements = 1;
+        int32_t ne[4] = { 1, 1, 1, 1 };
+        for (int i = 0; i < n_dims; ++i) {
+            finp.read(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
+            nelements *= ne[i];
+        }
+
+        std::string name(length, 0);
+        finp.read(&name[0], length);
+
+        printf("%64s - [%5d, %5d, %5d], type = %6s ", name.data(), ne[0], ne[1], ne[2], ggml_type_name((ggml_type) ttype));
+
+        bool quantize = false;
+
+        // Check if we should quantize this tensor
+        for (const auto & s : to_quant) {
+            if (std::regex_match(name, std::regex(s))) {
+                quantize = true;
+                break;
+            }
+        }
+
+        // Check if we should skip this tensor
+        for (const auto & s : to_skip) {
+            if (std::regex_match(name, std::regex(s))) {
+                quantize = false;
+                break;
+            }
+        }
+
+        // Quantize only 2D tensors
+        quantize &= (n_dims == 2);
+
+        if (quantize) {
+            if (ttype != GGML_TYPE_F32 && ttype != GGML_TYPE_F16) {
+                fprintf(stderr, "%s: unsupported ttype %d (%s) for integer quantization\n", __func__, ttype, ggml_type_name((ggml_type) ttype));
+                return WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED;
+            }
+
+            if (ttype == GGML_TYPE_F16) {
+                data_f16.resize(nelements);
+                finp.read(reinterpret_cast<char *>(data_f16.data()), nelements * sizeof(ggml_fp16_t));
+                data_f32.resize(nelements);
+                for (int i = 0; i < nelements; ++i) {
+                    data_f32[i] = ggml_fp16_to_fp32(data_f16[i]);
+                }
+            } else {
+                data_f32.resize(nelements);
+                finp.read(reinterpret_cast<char *>(data_f32.data()), nelements * sizeof(float));
+            }
+
+            ttype = qtype;
+        } else {
+            const int bpe = (ttype == 0) ? sizeof(float) : sizeof(uint16_t);
+
+            data_u8.resize(nelements*bpe);
+            finp.read(reinterpret_cast<char *>(data_u8.data()), nelements * bpe);
+        }
+
+        fout.write(reinterpret_cast<char *>(&n_dims), sizeof(n_dims));
+        fout.write(reinterpret_cast<char *>(&length), sizeof(length));
+        fout.write(reinterpret_cast<char *>(&ttype),  sizeof(ttype));
+        for (int i = 0; i < n_dims; ++i) {
+            fout.write(reinterpret_cast<char *>(&ne[i]), sizeof(ne[i]));
+        }
+        fout.write(&name[0], length);
+
+        if (quantize) {
+            work.resize(nelements); // for quantization
+
+            size_t cur_size = 0;
+            switch ((ggml_type) ttype) {
+                case GGML_TYPE_Q4_0:
+                case GGML_TYPE_Q4_1:
+                case GGML_TYPE_Q5_0:
+                case GGML_TYPE_Q5_1:
+                case GGML_TYPE_Q8_0:
+                case GGML_TYPE_Q2_K:
+                case GGML_TYPE_Q3_K:
+                case GGML_TYPE_Q4_K:
+                case GGML_TYPE_Q5_K:
+                case GGML_TYPE_Q6_K:
+                    {
+                        cur_size = ggml_quantize_chunk((ggml_type) ttype, data_f32.data(), work.data(), 0, nelements/ne[0], ne[0], nullptr);
+                    } break;
+                case GGML_TYPE_F32:
+                case GGML_TYPE_F16:
+                case GGML_TYPE_I8:
+                case GGML_TYPE_I16:
+                case GGML_TYPE_I32:
+                case GGML_TYPE_I64:
+                case GGML_TYPE_F64:
+                case GGML_TYPE_Q8_1:
+                case GGML_TYPE_Q8_K:
+                case GGML_TYPE_IQ2_XXS:
+                case GGML_TYPE_IQ2_XS:
+                case GGML_TYPE_IQ2_S:
+                case GGML_TYPE_IQ3_XXS:
+                case GGML_TYPE_IQ3_S:
+                case GGML_TYPE_IQ1_S:
+                case GGML_TYPE_IQ4_NL:
+                case GGML_TYPE_IQ4_XS:
+                case GGML_TYPE_IQ1_M:
+                case GGML_TYPE_BF16:
+                case GGML_TYPE_TQ1_0:
+                case GGML_TYPE_TQ2_0:
+                case GGML_TYPE_MXFP4:
+                case GGML_TYPE_COUNT:
+                    {
+                        fprintf(stderr, "%s: unsupported quantization type %d (%s)\n", __func__, ttype, ggml_type_name((ggml_type) ttype));
+                        return WHISPER_QUANTIZE_ERROR_QUANTIZATION_FAILED;
+                    }
+            }
+
+            fout.write(reinterpret_cast<char *>(work.data()), cur_size);
+            total_size_new += cur_size;
+
+            printf("size = %8.2f MB -> %8.2f MB\n", nelements * sizeof(float)/1024.0/1024.0, cur_size/1024.0/1024.0);
+        } else {
+            printf("size = %8.3f MB\n", data_u8.size()/1024.0/1024.0);
+            fout.write(reinterpret_cast<char *>(data_u8.data()), data_u8.size());
+            total_size_new += data_u8.size();
+        }
+
+        total_size_org += nelements * sizeof(float);
+        tensor_idx++;
+
+        // Report per-tensor progress
+        if (progress_callback && total_tensors > 0) {
+            progress_callback((float)tensor_idx / (float)total_tensors);
+        }
     }
+
+    printf("%s: model size  = %8.2f MB\n", __func__, total_size_org/1024.0/1024.0);
+    printf("%s: quant size  = %8.2f MB | ftype = %d (%s)\n", __func__, total_size_new/1024.0/1024.0, ftype, ggml_type_name(qtype));
 
     finp.close();
     fout.close();

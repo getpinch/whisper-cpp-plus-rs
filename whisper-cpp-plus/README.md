@@ -47,7 +47,7 @@ whisper-cpp-plus = { version = "0.1.0", features = ["cuda"] }
 - **StreamPCM** — `WhisperStreamPcm` for raw PCM input with VAD-driven processing
 - **VAD** — `WhisperVadProcessor` for Silero-based voice activity detection
 - **Enhanced** — Temperature fallback + enhanced VAD aggregation for improved quality
-- **Quantization** — `ModelQuantizer` for model compression (feature = `quantization`)
+- **Quantization** — `WhisperQuantize` for model compression (feature = `quantization`)
 
 ## Examples
 
