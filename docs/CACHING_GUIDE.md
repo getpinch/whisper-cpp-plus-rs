@@ -3,9 +3,15 @@
 ## Problem
 When including this crate as a local dependency, whisper.cpp rebuilds every time (several minutes per build).
 
-## Solution: Prebuilt Libraries with xtask
+## Default Build
 
-This project uses the `xtask` pattern for build automation. The primary commands:
+By default, `cargo build` invokes CMake to compile whisper.cpp from source. This works for all features including CUDA — just install the toolkit and `cargo build --features cuda`.
+
+The first build takes several minutes (CMake configure + full C++ compile). Subsequent builds are cached by cargo unless the source changes.
+
+## Optional: Prebuilt Libraries with xtask
+
+For CI pipelines or to skip recompilation, you can prebuild and cache the static libraries. The `xtask` commands:
 
 | Command | Description |
 |---------|-------------|
@@ -86,12 +92,12 @@ Downloads `ggml-tiny.en.bin` and `ggml-silero-v6.2.0.bin` into `vendor/whisper.c
 
 ### How It Works
 
-1. `cargo xtask prebuild` compiles whisper.cpp via the `cc` crate and stores the static library in `prebuilt/`
-2. `whisper-cpp-plus-sys/build.rs` checks for prebuilt libraries before compiling:
+1. `cargo xtask prebuild` compiles whisper.cpp via CMake and stores static libraries in `prebuilt/`
+2. `whisper-cpp-plus-sys/build.rs` checks for prebuilt libraries before invoking CMake:
    - First checks `WHISPER_PREBUILT_PATH` env var
    - Then checks `prebuilt/{target}/{profile}/` relative to project root
    - On Unix, also checks system paths (`/usr/local/lib`, `/usr/lib`, `/opt/homebrew/lib`)
-3. If found, it links the prebuilt library instead of recompiling
+3. If found, it links the prebuilt libraries instead of running CMake
 
 ### Verification
 
@@ -118,6 +124,58 @@ For additional caching across projects:
 cargo install sccache
 export RUSTC_WRAPPER=sccache
 ```
+
+## CUDA Builds
+
+### Direct Build (Recommended)
+
+Install the CUDA toolkit and build directly:
+
+```bash
+cargo build --features cuda
+```
+
+The build script invokes CMake with `-DGGML_CUDA=1` automatically. CMake handles CUDA compiler discovery.
+
+To set a specific GPU architecture:
+
+```bash
+CMAKE_CUDA_ARCHITECTURES=86 cargo build --features cuda
+```
+
+Any `CMAKE_*` environment variable is passed through to CMake.
+
+### Prebuilt CUDA Libraries
+
+For CI or repeated builds, use xtask:
+
+```bash
+cargo xtask prebuild --cuda
+```
+
+Or set `WHISPER_PREBUILT_PATH` to a directory containing pre-compiled static libs (whisper + ggml satellites + ggml-cuda).
+
+### CUDA Toolkit Detection
+
+The build script locates the CUDA toolkit in this order:
+
+1. `CUDA_PATH` environment variable
+2. `CUDA_HOME` environment variable
+3. Standard paths:
+   - Windows: `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\vX.Y` (latest version)
+   - Linux: `/usr/local/cuda`, `/usr/lib/cuda`, `/opt/cuda`
+
+### Common `CMAKE_CUDA_ARCHITECTURES` Values
+
+| GPU | Architecture | Value |
+|-----|-------------|-------|
+| RTX 4090/4080/4070 | Ada Lovelace | `89` |
+| RTX 3090/3080/3070 | Ampere | `86` |
+| RTX 3060/3050 | Ampere | `86` |
+| A100 | Ampere | `80` |
+| RTX 2080/2070 | Turing | `75` |
+| GTX 1080/1070 | Pascal | `61` |
+| Multiple GPUs | Mixed | `"75;86;89"` |
 
 ### Troubleshooting
 

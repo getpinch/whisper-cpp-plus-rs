@@ -2,302 +2,411 @@ use std::env;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    // Tell cargo to rerun if the build script changes
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../vendor/whisper.cpp");
+    println!("cargo:rerun-if-env-changed=WHISPER_PREBUILT_PATH");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
 
-    // Get output directory
-    let out_dir = env::var("OUT_DIR").unwrap();
-
-    // Get target OS for platform-specific configuration
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
-    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "unknown".to_string());
 
-    // Check for prebuilt library
-    let use_prebuilt = check_and_use_prebuilt(&target_os);
+    let prebuilt_dir = check_and_use_prebuilt(&target_os);
 
-    if !use_prebuilt {
-        // Build whisper.cpp using cc crate
-        build_whisper_cpp(&target_os, &target_arch);
-
-        // Important: Add linking instructions for built library
-        println!("cargo:rustc-link-search=native={}", out_dir);
+    if let Some(ref dir) = prebuilt_dir {
+        // Prebuilt path: link whisper + probe ggml satellite libs
+        println!("cargo:rustc-link-lib=static=whisper");
+        link_prebuilt_ggml_libs(dir, &target_os);
+    } else {
+        // CMake build path
+        build_with_cmake(&target_os);
     }
 
-    println!("cargo:rustc-link-lib=static=whisper");
-
-    // Generate bindings using bindgen
+    link_platform_libs(&target_os);
+    link_accelerator_libs(&target_os);
+    build_quantize_wrapper();
     generate_bindings();
-
-    // Windows-specific libraries
-    if target_os == "windows" {
-        println!("cargo:rustc-link-lib=ws2_32");
-        println!("cargo:rustc-link-lib=bcrypt");
-        println!("cargo:rustc-link-lib=advapi32");
-        println!("cargo:rustc-link-lib=userenv");
-    }
 }
 
-fn check_and_use_prebuilt(target_os: &str) -> bool {
-    // Determine library file name based on platform
-    let lib_name = if target_os == "windows" {
-        "whisper.lib"
-    } else {
-        "libwhisper.a"
-    };
+// ---------------------------------------------------------------------------
+// CMake build
+// ---------------------------------------------------------------------------
 
-    // Check for WHISPER_PREBUILT_PATH environment variable
-    if let Ok(prebuilt_path) = env::var("WHISPER_PREBUILT_PATH") {
-        let lib_path = Path::new(&prebuilt_path).join(lib_name);
-        if lib_path.exists() {
-            println!("cargo:warning=Using prebuilt whisper library from: {}", prebuilt_path);
-            println!("cargo:rustc-link-search=native={}", prebuilt_path);
-            return true;
+fn build_with_cmake(target_os: &str) {
+    let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let whisper_root = out.join("whisper.cpp");
+
+    // Copy vendor source to OUT_DIR to avoid polluting the vendor directory
+    if !whisper_root.exists() {
+        let src = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
+            .join("../vendor/whisper.cpp");
+        let src = src.canonicalize().expect("vendor/whisper.cpp not found");
+
+        let options = fs_extra::dir::CopyOptions::new();
+        fs_extra::dir::copy(&src, &out, &options).expect("failed to copy vendor/whisper.cpp to OUT_DIR");
+    }
+
+    let mut config = cmake::Config::new(&whisper_root);
+    config
+        .profile("Release")
+        .define("BUILD_SHARED_LIBS", "OFF")
+        .define("WHISPER_BUILD_TESTS", "OFF")
+        .define("WHISPER_BUILD_EXAMPLES", "OFF")
+        .pic(true);
+
+    // Feature-gated CMake flags
+    if cfg!(feature = "cuda") {
+        config.define("GGML_CUDA", "ON");
+    }
+    if cfg!(feature = "metal") {
+        config.define("GGML_METAL", "ON");
+        config.define("GGML_METAL_EMBED_LIBRARY", "ON");
+    } else {
+        config.define("GGML_METAL", "OFF");
+    }
+    if cfg!(feature = "openblas") {
+        config.define("GGML_BLAS", "ON");
+    }
+
+    // Windows-specific
+    if target_os == "windows" {
+        config.cxxflag("/utf-8");
+    }
+
+    // Allow env var passthrough (CMAKE_*, WHISPER_*)
+    for (key, value) in env::vars() {
+        if key.starts_with("CMAKE_")
+            || (key.starts_with("WHISPER_")
+                && key != "WHISPER_PREBUILT_PATH"
+                && key != "WHISPER_NO_AVX"
+                && key != "WHISPER_TEST_MODEL_DIR"
+                && key != "WHISPER_TEST_AUDIO_DIR")
+        {
+            config.define(&key, &value);
         }
     }
 
-    // Check for prebuilt library in standard locations
-    let target = env::var("TARGET").unwrap_or_default();
-    let profile = env::var("PROFILE").unwrap_or_else(|_| "release".to_string());
+    let destination = config.build();
 
-    // Try prebuilt directory in project root
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-    let prebuilt_dir = Path::new(&manifest_dir).parent()
-        .map(|p| p.join("prebuilt").join(&target).join(&profile))
-        .unwrap_or_else(|| Path::new("../prebuilt").join(&target).join(&profile));
+    // CMake scatters outputs across subdirs — add them all to link search
+    add_link_search_path_recursive(&out.join("build"));
+    println!(
+        "cargo:rustc-link-search=native={}",
+        destination.join("lib").display()
+    );
 
-    // Use correct library extension based on platform
+    // Link produced static libs
+    println!("cargo:rustc-link-lib=static=whisper");
+    println!("cargo:rustc-link-lib=static=ggml");
+    println!("cargo:rustc-link-lib=static=ggml-base");
+    println!("cargo:rustc-link-lib=static=ggml-cpu");
+
+    if cfg!(feature = "cuda") {
+        println!("cargo:rustc-link-lib=static=ggml-cuda");
+    }
+    if cfg!(feature = "metal") {
+        println!("cargo:rustc-link-lib=static=ggml-metal");
+    }
+}
+
+/// Recursively add all subdirectories of `dir` to the native link search path.
+/// CMake places .lib/.a files in various nested directories.
+fn add_link_search_path_recursive(dir: &Path) {
+    if !dir.exists() {
+        return;
+    }
+    println!("cargo:rustc-link-search=native={}", dir.display());
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                add_link_search_path_recursive(&entry.path());
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Quantize wrapper (cc crate — our own C++ file, not part of CMake build)
+// ---------------------------------------------------------------------------
+
+fn build_quantize_wrapper() {
+    #[cfg(feature = "quantization")]
+    {
+        cc::Build::new()
+            .cpp(true)
+            .std("c++17")
+            .include("../vendor/whisper.cpp/include")
+            .include("../vendor/whisper.cpp/ggml/include")
+            .include("../vendor/whisper.cpp/examples")
+            .file("../vendor/whisper.cpp/examples/common.cpp")
+            .file("../vendor/whisper.cpp/examples/common-ggml.cpp")
+            .file("src/quantize_wrapper.cpp")
+            .compile("quantize_wrapper");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Prebuilt library detection
+// ---------------------------------------------------------------------------
+
+/// Check for prebuilt library. Returns `Some(dir)` if found.
+fn check_and_use_prebuilt(target_os: &str) -> Option<PathBuf> {
     let lib_name = if target_os == "windows" {
         "whisper.lib"
     } else {
         "libwhisper.a"
     };
-    let lib_path = prebuilt_dir.join(lib_name);
 
-    if lib_path.exists() {
-        // Use absolute path for linking
-        let abs_path = lib_path.parent().unwrap().canonicalize()
-            .unwrap_or_else(|_| prebuilt_dir.clone());
-        println!("cargo:warning=Using prebuilt whisper library from: {}", abs_path.display());
-        println!("cargo:rustc-link-search=native={}", abs_path.display());
-        return true;
+    // Check WHISPER_PREBUILT_PATH env var
+    if let Ok(prebuilt_path) = env::var("WHISPER_PREBUILT_PATH") {
+        let dir = PathBuf::from(&prebuilt_path);
+        let lib_path = dir.join(lib_name);
+        if lib_path.exists() {
+            println!(
+                "cargo:warning=Using prebuilt whisper library from: {}",
+                prebuilt_path
+            );
+            println!("cargo:rustc-link-search=native={}", prebuilt_path);
+            return Some(dir);
+        }
     }
 
-    // Also check for system-wide installation
+    // Check prebuilt/ directory in project root
+    let target = env::var("TARGET").unwrap_or_default();
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "release".to_string());
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+    let prebuilt_dir = Path::new(&manifest_dir)
+        .parent()
+        .map(|p| p.join("prebuilt").join(&target).join(&profile))
+        .unwrap_or_else(|| Path::new("../prebuilt").join(&target).join(&profile));
+
+    let lib_path = prebuilt_dir.join(lib_name);
+    if lib_path.exists() {
+        let abs_path = lib_path
+            .parent()
+            .unwrap()
+            .canonicalize()
+            .unwrap_or_else(|_| prebuilt_dir.clone());
+        println!(
+            "cargo:warning=Using prebuilt whisper library from: {}",
+            abs_path.display()
+        );
+        println!("cargo:rustc-link-search=native={}", abs_path.display());
+        return Some(abs_path);
+    }
+
+    // Check system paths (Unix only)
     if target_os != "windows" {
-        // Check common system library paths
         let system_paths = ["/usr/local/lib", "/usr/lib", "/opt/homebrew/lib"];
         for path in &system_paths {
             let lib_path = Path::new(path).join("libwhisper.a");
             if lib_path.exists() {
                 println!("cargo:warning=Using system whisper library from: {}", path);
                 println!("cargo:rustc-link-search=native={}", path);
-                return true;
+                return Some(PathBuf::from(path));
             }
         }
     }
 
-    false
+    None
 }
 
-fn build_whisper_cpp(target_os: &str, target_arch: &str) {
-    let mut build = cc::Build::new();
+/// Probe prebuilt dir for ggml satellite libraries (produced by CMake builds).
+fn link_prebuilt_ggml_libs(dir: &Path, target_os: &str) {
+    let ext = if target_os == "windows" { "lib" } else { "a" };
 
-    // Configure C++ compilation
-    build.cpp(true);
-
-    // Set C++ standard - ggml-backend-reg.cpp requires C++17 for std::filesystem
-    build.std("c++17");
-
-    // Add include directories
-    build.include("../vendor/whisper.cpp")
-        .include("../vendor/whisper.cpp/include")
-        .include("../vendor/whisper.cpp/ggml/include")
-        .include("../vendor/whisper.cpp/ggml/src")
-        .include("../vendor/whisper.cpp/ggml/src/ggml-cpu")
-        .include("../vendor/whisper.cpp/examples");
-
-    // Core source files
-    build.file("../vendor/whisper.cpp/src/whisper.cpp")
-        // Core GGML files
-        .file("../vendor/whisper.cpp/ggml/src/ggml.c")
-        .file("../vendor/whisper.cpp/ggml/src/ggml.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-alloc.c")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-backend.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-backend-reg.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-threading.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-quants.c")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-opt.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/gguf.cpp");
-
-    // Conditionally add quantization support
-    #[cfg(feature = "quantization")]
-    {
-        build
-            .file("../vendor/whisper.cpp/examples/common.cpp")
-            .file("../vendor/whisper.cpp/examples/common-ggml.cpp")
-            .file("src/quantize_wrapper.cpp");
+    // ggml satellite libs that CMake may produce
+    let optional_libs = ["ggml", "ggml-base", "ggml-cpu"];
+    for lib in &optional_libs {
+        let filename = if target_os == "windows" {
+            format!("{}.{}", lib, ext)
+        } else {
+            format!("lib{}.{}", lib, ext)
+        };
+        if dir.join(&filename).exists() {
+            println!("cargo:rustc-link-lib=static={}", lib);
+        }
     }
 
-    // CPU backend core files
-    build
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.c")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ggml-cpu.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/binary-ops.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/unary-ops.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/ops.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/quants.c")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/traits.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/vec.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/repack.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/hbm.cpp")
-        // AMX (Advanced Matrix Extensions) files
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/amx/amx.cpp")
-        .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/amx/mmq.cpp");
-
-    // Common compiler flags
-    build.flag_if_supported("-fPIC");
-
-    // Add definitions for memory alignment and features
-    build.define("_ALIGNAS_SUPPORTED", None);
-    build.define("GGML_USE_CPU", None);
-    build.define("WHISPER_VERSION", Some("\"1.8.3\""));
-    build.define("GGML_VERSION", Some("\"0.9.5\""));
-    build.define("GGML_COMMIT", Some("\"unknown\""));
-
-    // Platform-specific configuration
-    match target_os {
-        "macos" => {
-            build.define("GGML_USE_ACCELERATE", None);
-
-            // Link Accelerate framework
-            println!("cargo:rustc-link-lib=framework=Accelerate");
-            println!("cargo:rustc-link-lib=framework=Foundation");
-
-            // Add Metal support if feature is enabled
-            #[cfg(feature = "metal")]
-            {
-                build.define("GGML_USE_METAL", None);
-                build.define("GGML_METAL_EMBED_LIBRARY", None);
-                build.file("../vendor/whisper.cpp/ggml/src/ggml-metal.m");
-                println!("cargo:rustc-link-lib=framework=Metal");
-                println!("cargo:rustc-link-lib=framework=MetalKit");
-                println!("cargo:rustc-link-lib=framework=MetalPerformanceShaders");
-            }
-        }
-        "windows" => {
-            build.define("_CRT_SECURE_NO_WARNINGS", None);
-            build.define("WIN32_LEAN_AND_MEAN", None);
-
-            // Windows needs explicit linking for some libraries - handled in main()
-
-            // Use MSVC-specific optimizations
-            if cfg!(target_env = "msvc") {
-                build.flag("/O2");
-                build.flag("/arch:AVX2");
-                build.flag("/MT");  // Static runtime to avoid DLL issues
-            }
-        }
-        "linux" => {
-            // Link math library on Linux
-            println!("cargo:rustc-link-lib=m");
-            println!("cargo:rustc-link-lib=pthread");
-
-            // Enable OpenBLAS if feature is enabled
-            #[cfg(feature = "openblas")]
-            {
-                build.define("GGML_USE_OPENBLAS", None);
-                println!("cargo:rustc-link-lib=openblas");
-            }
-        }
-        _ => {}
-    }
-
-    // Architecture-specific optimizations
-    match target_arch {
-        "x86_64" => {
-            // Add x86-specific CPU backend files
-            build.file("../vendor/whisper.cpp/ggml/src/ggml-cpu/arch/x86/quants.c")
-                .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/arch/x86/repack.cpp")
-                .file("../vendor/whisper.cpp/ggml/src/ggml-cpu/arch/x86/cpu-feats.cpp");
-
-            // Enable AVX/AVX2 if available
-            if env::var("WHISPER_NO_AVX").is_err() {
-                build.flag_if_supported("-mavx");
-                build.flag_if_supported("-mavx2");
-                build.flag_if_supported("-mfma");
-                build.flag_if_supported("-mf16c");
-            }
-        }
-        "aarch64" => {
-            // ARM NEON optimizations
-            build.flag_if_supported("-mfpu=neon");
-        }
-        _ => {}
-    }
-
-    // CUDA support
+    // CUDA satellite lib
     #[cfg(feature = "cuda")]
     {
-        build.define("GGML_USE_CUDA", None);
-        build.cuda(true);
-        build.file("../vendor/whisper.cpp/ggml/src/ggml-cuda.cu");
-        println!("cargo:rustc-link-lib=cuda");
-        println!("cargo:rustc-link-lib=cublas");
-        println!("cargo:rustc-link-lib=cudart");
-    }
-
-    // Debug/Release specific flags
-    let profile = env::var("PROFILE").unwrap_or_else(|_| "release".to_string());
-    match profile.as_str() {
-        "debug" => {
-            build.opt_level(0);
-            build.define("DEBUG", None);
+        let cuda_filename = if target_os == "windows" {
+            format!("ggml-cuda.{}", ext)
+        } else {
+            format!("libggml-cuda.{}", ext)
+        };
+        if dir.join(&cuda_filename).exists() {
+            println!("cargo:rustc-link-lib=static=ggml-cuda");
+        } else {
+            panic!(
+                "\n\n\
+                 ======================================================\n\
+                 CUDA feature enabled but ggml-cuda.{} not found in:\n\
+                 {}\n\n\
+                 Build whisper.cpp with CMake + -DGGML_CUDA=1 and copy\n\
+                 all .lib/.a files to the prebuilt directory.\n\
+                 ======================================================",
+                ext,
+                dir.display()
+            );
         }
-        _ => {
-            build.opt_level(3);
-            build.define("NDEBUG", None);
-        }
     }
-
-    // Compile the library
-    build.compile("whisper");
 }
 
+// ---------------------------------------------------------------------------
+// Platform / accelerator linking
+// ---------------------------------------------------------------------------
+
+/// Platform-specific system libraries.
+fn link_platform_libs(target_os: &str) {
+    match target_os {
+        "windows" => {
+            println!("cargo:rustc-link-lib=ws2_32");
+            println!("cargo:rustc-link-lib=bcrypt");
+            println!("cargo:rustc-link-lib=advapi32");
+            println!("cargo:rustc-link-lib=userenv");
+        }
+        "macos" => {
+            println!("cargo:rustc-link-lib=framework=Accelerate");
+            println!("cargo:rustc-link-lib=framework=Foundation");
+        }
+        "linux" => {
+            println!("cargo:rustc-link-lib=m");
+            println!("cargo:rustc-link-lib=pthread");
+            println!("cargo:rustc-link-lib=stdc++");
+        }
+        _ => {}
+    }
+}
+
+/// Accelerator libraries (CUDA toolkit, Metal frameworks, OpenBLAS).
+fn link_accelerator_libs(_target_os: &str) {
+    #[cfg(feature = "cuda")]
+    {
+        // CUDA toolkit libs still needed at link time.
+        // CMake handles CUDA discovery during build, but we still need
+        // to tell rustc where the toolkit libs are.
+        let cuda_path = find_cuda_toolkit(_target_os);
+        let lib_dir = if _target_os == "windows" {
+            cuda_path.join("lib").join("x64")
+        } else {
+            cuda_path.join("lib64")
+        };
+        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        println!("cargo:rustc-link-lib=cudart_static");
+        println!("cargo:rustc-link-lib=cublas");
+        println!("cargo:rustc-link-lib=cublasLt");
+        println!("cargo:rustc-link-lib=cuda");
+    }
+
+    #[cfg(feature = "metal")]
+    {
+        if _target_os == "macos" {
+            println!("cargo:rustc-link-lib=framework=Metal");
+            println!("cargo:rustc-link-lib=framework=MetalKit");
+            println!("cargo:rustc-link-lib=framework=MetalPerformanceShaders");
+        }
+    }
+
+    #[cfg(feature = "openblas")]
+    {
+        println!("cargo:rustc-link-lib=openblas");
+    }
+}
+
+/// Locate CUDA toolkit installation directory.
+#[cfg(feature = "cuda")]
+fn find_cuda_toolkit(target_os: &str) -> PathBuf {
+    if let Ok(p) = env::var("CUDA_PATH") {
+        let path = PathBuf::from(&p);
+        if path.exists() {
+            println!("cargo:warning=Using CUDA toolkit from CUDA_PATH: {}", p);
+            return path;
+        }
+    }
+
+    if let Ok(p) = env::var("CUDA_HOME") {
+        let path = PathBuf::from(&p);
+        if path.exists() {
+            println!("cargo:warning=Using CUDA toolkit from CUDA_HOME: {}", p);
+            return path;
+        }
+    }
+
+    if target_os == "windows" {
+        let base = PathBuf::from(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA");
+        if base.exists() {
+            if let Ok(entries) = std::fs::read_dir(&base) {
+                let mut versions: Vec<PathBuf> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .collect();
+                versions.sort();
+                if let Some(latest) = versions.last() {
+                    println!(
+                        "cargo:warning=Using CUDA toolkit from standard path: {}",
+                        latest.display()
+                    );
+                    return latest.clone();
+                }
+            }
+        }
+    } else {
+        let linux_paths = ["/usr/local/cuda", "/usr/lib/cuda", "/opt/cuda"];
+        for p in &linux_paths {
+            let path = PathBuf::from(p);
+            if path.exists() {
+                println!(
+                    "cargo:warning=Using CUDA toolkit from standard path: {}",
+                    p
+                );
+                return path;
+            }
+        }
+    }
+
+    panic!(
+        "\n\n\
+         ======================================================\n\
+         CUDA toolkit not found.\n\n\
+         Set one of these environment variables:\n\
+         - CUDA_PATH (checked first)\n\
+         - CUDA_HOME\n\n\
+         Or install CUDA toolkit to a standard location:\n\
+         - Windows: C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\vX.Y\n\
+         - Linux: /usr/local/cuda\n\
+         ======================================================"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Bindings
+// ---------------------------------------------------------------------------
+
 fn generate_bindings() {
-    // Tell cargo to invalidate the built crate whenever the wrapper changes
     println!("cargo:rerun-if-changed=../vendor/whisper.cpp/include/whisper.h");
 
     let bindings = bindgen::Builder::default()
-        // The input header we would like to generate bindings for
         .header("../vendor/whisper.cpp/include/whisper.h")
-        // Tell bindgen this is a C++ header
         .clang_arg("-x")
         .clang_arg("c++")
         .clang_arg("-std=c++11")
-        // Include paths
         .clang_arg("-I../vendor/whisper.cpp/include")
         .clang_arg("-I../vendor/whisper.cpp/ggml/include")
-        // Only generate bindings for whisper functions and types
         .allowlist_function("whisper_.*")
         .allowlist_type("whisper_.*")
         .allowlist_var("WHISPER_.*")
-        // Don't generate bindings for C++ STL types
         .opaque_type("std::.*")
         .opaque_type("std::.*::.*")
-        // Use core instead of std in generated code
         .use_core()
         .ctypes_prefix("::core::ffi")
-        // Generate layout tests
         .layout_tests(true)
-        // Derive common traits
         .derive_default(true)
         .derive_debug(true)
-        // Generate the bindings
         .generate()
         .expect("Unable to generate bindings");
 
-    // Write the bindings to the $OUT_DIR/bindings.rs file
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
         .write_to_file(out_path.join("bindings.rs"))

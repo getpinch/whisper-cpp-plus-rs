@@ -17,15 +17,19 @@ This is the foundation crate for [whisper-cpp-plus](https://github.com/Code-Amp/
 
 ## Build
 
-The build script (`build.rs`) compiles whisper.cpp from source via the `cc` crate, or links a prebuilt library if available. Control via environment variables:
+The build script (`build.rs`) compiles whisper.cpp from source via the `cmake` crate, or links a prebuilt library if available. CMake is invoked automatically — GPU features like CUDA "just work" with the toolkit installed.
 
 | Variable | Description |
 |----------|-------------|
-| `WHISPER_PREBUILT_PATH` | Path to prebuilt `whisper.lib`/`libwhisper.a` |
+| `WHISPER_PREBUILT_PATH` | Path to prebuilt static libs (skips cmake build) |
 | `WHISPER_NO_AVX` | Disable AVX/AVX2 instructions |
+| `CUDA_PATH` | CUDA toolkit root (checked first for `cuda` feature) |
+| `CUDA_HOME` | CUDA toolkit root (fallback) |
+| `CMAKE_*` | Passed through to CMake (e.g. `CMAKE_CUDA_ARCHITECTURES`) |
 
 ### Platform requirements
 
+- **All**: CMake 3.14+
 - **Windows**: Visual Studio 2019+ (MSVC)
 - **Linux**: GCC 9+ or Clang 11+, `build-essential`
 - **macOS**: Xcode command line tools (Accelerate linked automatically)

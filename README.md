@@ -50,6 +50,7 @@ hound = "3.5"  # WAV file loading
 ### System Requirements
 
 - Rust 1.70.0+
+- CMake 3.14+
 - C++ compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
 
 ### Feature Flags
@@ -60,6 +61,18 @@ whisper-cpp-plus = { version = "0.1.0", features = ["async"] }         # Async A
 whisper-cpp-plus = { version = "0.1.0", features = ["cuda"] }          # NVIDIA GPU
 whisper-cpp-plus = { version = "0.1.0", features = ["metal"] }         # macOS GPU
 ```
+
+### CUDA GPU Acceleration
+
+Install the [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit) and build:
+
+```bash
+cargo build --features cuda
+```
+
+The build script uses CMake to compile whisper.cpp with CUDA support automatically. The CUDA toolkit is located via `CUDA_PATH` → `CUDA_HOME` → standard install paths.
+
+**Advanced: prebuilt libraries** — for CI or to skip recompilation, set `WHISPER_PREBUILT_PATH` to a directory containing pre-compiled static libs. See [docs/CACHING_GUIDE.md](docs/CACHING_GUIDE.md).
 
 ## Crate Structure
 

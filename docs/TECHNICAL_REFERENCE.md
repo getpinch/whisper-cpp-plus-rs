@@ -77,10 +77,43 @@ Diagnostic: `cargo test --verbose 2>&1 | grep "unresolved external"` to see exac
 
 | Variable | Purpose |
 |----------|---------|
-| `WHISPER_PREBUILT_PATH` | Path to prebuilt library (skip C++ compilation) |
+| `WHISPER_PREBUILT_PATH` | Path to prebuilt static libs (skips CMake build entirely) |
 | `WHISPER_NO_AVX` | Disable AVX/AVX2 for old CPUs |
 | `WHISPER_TEST_MODEL_DIR` | Override test model search path |
 | `WHISPER_TEST_AUDIO_DIR` | Override test audio search path |
+| `CUDA_PATH` | CUDA toolkit root directory (checked first) |
+| `CUDA_HOME` | CUDA toolkit root directory (fallback) |
+| `CMAKE_*` | Passed through to CMake (e.g. `CMAKE_CUDA_ARCHITECTURES`, `CMAKE_BUILD_TYPE`) |
+
+## Build system
+
+The `cmake` crate invokes CMake from `build.rs` to compile whisper.cpp. The vendor source is copied to `OUT_DIR` before building to avoid polluting the working tree.
+
+Feature flags map to CMake defines:
+- `cuda` → `-DGGML_CUDA=ON`
+- `metal` → `-DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON`
+- `openblas` → `-DGGML_BLAS=ON`
+
+The quantization wrapper (`src/quantize_wrapper.cpp`) is compiled separately via the `cc` crate since it's our own C++ code, not part of whisper.cpp's CMake build.
+
+## GPU Linking
+
+### CUDA (`--features cuda`)
+
+CMake handles CUDA compilation automatically. The build script:
+
+1. Invokes CMake with `-DGGML_CUDA=ON` (or uses prebuilt libs from `WHISPER_PREBUILT_PATH`)
+2. Links static libs: `whisper`, `ggml`, `ggml-base`, `ggml-cpu`, `ggml-cuda`
+3. Locates CUDA toolkit (`CUDA_PATH` → `CUDA_HOME` → standard paths)
+4. Links CUDA runtime: `cudart_static`, `cublas`, `cublasLt`, `cuda`
+
+### Metal (`--features metal`)
+
+macOS only. Links `Metal`, `MetalKit`, `MetalPerformanceShaders` frameworks. Works with both CMake build and prebuilt.
+
+### OpenBLAS (`--features openblas`)
+
+Links `openblas`. Works with both CMake build and prebuilt.
 
 ## Default parameter values
 
