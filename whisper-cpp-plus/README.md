@@ -1,5 +1,7 @@
 # whisper-cpp-plus
 
+> **Pinned to whisper.cpp v1.8.3** (fork: [`rmorse/whisper.cpp`](https://github.com/rmorse/whisper.cpp), branch: `stream-pcm`)
+
 Safe, idiomatic Rust bindings for [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — OpenAI's Whisper speech recognition model.
 
 ## Quick Start
