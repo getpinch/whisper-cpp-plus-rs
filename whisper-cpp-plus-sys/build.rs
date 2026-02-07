@@ -35,14 +35,13 @@ fn build_with_cmake(target_os: &str) {
     let out = PathBuf::from(env::var("OUT_DIR").unwrap());
     let whisper_root = out.join("whisper.cpp");
 
-    // Copy vendor source to OUT_DIR to avoid polluting the vendor directory
+    // Copy vendor source to OUT_DIR to avoid polluting the vendor directory.
+    // Uses a filtered copy that skips .git (submodule files Windows can't access).
     if !whisper_root.exists() {
         let src = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("../vendor/whisper.cpp");
         let src = src.canonicalize().expect("vendor/whisper.cpp not found");
-
-        let options = fs_extra::dir::CopyOptions::new();
-        fs_extra::dir::copy(&src, &out, &options).expect("failed to copy vendor/whisper.cpp to OUT_DIR");
+        copy_dir_filtered(&src, &whisper_root);
     }
 
     let mut config = cmake::Config::new(&whisper_root);
@@ -105,6 +104,29 @@ fn build_with_cmake(target_os: &str) {
     }
     if cfg!(feature = "metal") {
         println!("cargo:rustc-link-lib=static=ggml-metal");
+    }
+}
+
+/// Recursively copy a directory, skipping `.git` entries.
+fn copy_dir_filtered(src: &Path, dst: &Path) {
+    std::fs::create_dir_all(dst).expect("failed to create destination directory");
+    for entry in std::fs::read_dir(src).expect("failed to read source directory") {
+        let entry = entry.expect("failed to read directory entry");
+        let name = entry.file_name();
+        if name == ".git" {
+            continue;
+        }
+        let src_path = entry.path();
+        let dst_path = dst.join(&name);
+        let ft = entry.file_type().expect("failed to get file type");
+        if ft.is_dir() {
+            copy_dir_filtered(&src_path, &dst_path);
+        } else if ft.is_file() {
+            std::fs::copy(&src_path, &dst_path).unwrap_or_else(|e| {
+                panic!("failed to copy {} -> {}: {}", src_path.display(), dst_path.display(), e)
+            });
+        }
+        // Skip symlinks and other special files
     }
 }
 
