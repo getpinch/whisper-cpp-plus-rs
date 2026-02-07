@@ -60,9 +60,8 @@ pub mod enhanced;
 #[cfg(feature = "quantization")]
 mod quantize;
 
-// TODO: rewrite async API for new WhisperStream
-// #[cfg(feature = "async")]
-// mod async_api;
+#[cfg(feature = "async")]
+mod async_api;
 
 pub use context::WhisperContext;
 pub use error::{Result, WhisperError};
@@ -86,9 +85,8 @@ pub mod bench_helpers {
     pub use crate::vad::{WhisperVadProcessor, VadParams};
 }
 
-// TODO: rewrite async API for new WhisperStream
-// #[cfg(feature = "async")]
-// pub use async_api::{AsyncWhisperStream, SharedAsyncStream};
+#[cfg(feature = "async")]
+pub use async_api::{AsyncWhisperStream, SharedAsyncStream};
 
 // Re-export the sys crate for advanced users who need lower-level access
 pub use whisper_cpp_plus_sys;

@@ -6,7 +6,7 @@
 #[cfg(feature = "async")]
 use crate::{
     context::WhisperContext, error::Result, params::FullParams,
-    state::WhisperState, stream::{StreamConfig, WhisperStream}, Segment, TranscriptionResult,
+    state::WhisperState, stream::{WhisperStreamConfig, WhisperStream}, Segment, TranscriptionResult,
 };
 #[cfg(feature = "async")]
 use std::sync::Arc;
@@ -71,14 +71,14 @@ impl AsyncWhisperStream {
         context: WhisperContext,
         params: FullParams,
     ) -> Result<Self> {
-        Self::with_config(context, params, StreamConfig::default())
+        Self::with_config(context, params, WhisperStreamConfig::default())
     }
 
     /// Create a new async streaming transcriber with custom configuration
     pub fn with_config(
         context: WhisperContext,
         params: FullParams,
-        config: StreamConfig,
+        config: WhisperStreamConfig,
     ) -> Result<Self> {
         let (audio_tx, mut audio_rx) = mpsc::channel::<AudioCommand>(100);
         let (segment_tx, segment_rx) = mpsc::channel::<Vec<Segment>>(100);
@@ -91,11 +91,11 @@ impl AsyncWhisperStream {
                     AudioCommand::Feed(audio) => {
                         stream.feed_audio(&audio);
 
-                        // Process pending audio
-                        let segments = stream.process_pending()?;
-                        if !segments.is_empty() {
-                            // Try to send segments, ignore if receiver dropped
-                            let _ = segment_tx.blocking_send(segments);
+                        // Process available audio
+                        while let Some(segments) = stream.process_step()? {
+                            if !segments.is_empty() {
+                                let _ = segment_tx.blocking_send(segments);
+                            }
                         }
                     }
                     AudioCommand::Flush(response) => {
@@ -172,7 +172,7 @@ impl SharedAsyncStream {
     pub async fn new(
         context: &WhisperContext,
         params: FullParams,
-        config: StreamConfig,
+        config: WhisperStreamConfig,
     ) -> Result<Self> {
         let stream = WhisperStream::with_config(context, params, config)?;
 
@@ -191,10 +191,12 @@ impl SharedAsyncStream {
         // Feed audio
         inner.stream.feed_audio(&audio);
 
-        // Process pending
-        let segments = inner.stream.process_pending()?;
+        // Process available audio
+        let mut segments = Vec::new();
+        while let Some(segs) = inner.stream.process_step()? {
+            segments.extend(segs);
+        }
 
-        // Store segments
         inner.pending_segments.extend(segments.clone());
 
         Ok(segments)
@@ -263,7 +265,7 @@ mod tests {
             let ctx = WhisperContext::new(model_path).unwrap();
             let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
-            let stream = SharedAsyncStream::new(&ctx, params, StreamConfig::default()).await;
+            let stream = SharedAsyncStream::new(&ctx, params, WhisperStreamConfig::default()).await;
             assert!(stream.is_ok());
 
             let stream = stream.unwrap();
