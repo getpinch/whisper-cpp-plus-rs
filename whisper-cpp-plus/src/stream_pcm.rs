@@ -351,6 +351,8 @@ pub struct WhisperStreamPcmConfig {
     pub vad_thold: f32,
     /// High-pass frequency cutoff for simple VAD.
     pub freq_thold: f32,
+    /// If true, don't carry prompt tokens across inference boundaries.
+    pub no_context: bool,
     /// VAD probe chunk size in ms.
     pub vad_probe_ms: i32,
     /// Silence duration to end a segment in ms.
@@ -368,6 +370,7 @@ impl Default for WhisperStreamPcmConfig {
             use_vad: false,
             vad_thold: 0.6,
             freq_thold: 100.0,
+            no_context: true,
             vad_probe_ms: 200,
             vad_silence_ms: 800,
             vad_pre_roll_ms: 300,
@@ -398,6 +401,8 @@ pub struct WhisperStreamPcm {
 
     // Fixed-step state
     pcmf32_old: Vec<f32>,
+    n_new_line: i32,
+    prompt_tokens: Vec<i32>,
 
     // VAD state machine
     in_speech: bool,
@@ -460,6 +465,8 @@ impl WhisperStreamPcm {
                 config.length_ms = 5000;
             }
             config.keep_ms = 0;
+            // Force no_context in VAD mode (stream.cpp: no_context |= use_vad)
+            config.no_context = true;
         }
 
         let n_samples_step = if config.use_vad {
@@ -471,6 +478,12 @@ impl WhisperStreamPcm {
             (config.length_ms as f64 * 0.001 * WHISPER_SAMPLE_RATE as f64) as usize;
         let n_samples_keep =
             (config.keep_ms as f64 * 0.001 * WHISPER_SAMPLE_RATE as f64) as usize;
+
+        let n_new_line = if !config.use_vad && config.step_ms > 0 {
+            (config.length_ms / config.step_ms - 1).max(1)
+        } else {
+            1
+        };
 
         let vad_probe_ms = config.vad_probe_ms.max(1);
         let vad_last_ms = (vad_probe_ms / 2).clamp(1, 1000);
@@ -489,6 +502,8 @@ impl WhisperStreamPcm {
             n_samples_len,
             n_samples_keep,
             pcmf32_old: Vec::new(),
+            n_new_line,
+            prompt_tokens: Vec::new(),
             in_speech: false,
             speech_buf: Vec::new(),
             pre_roll: Vec::new(),
@@ -599,10 +614,15 @@ impl WhisperStreamPcm {
         let segments = self.run_inference(&pcmf32)?;
         self.n_iter += 1;
 
-        // Keep overlap for next iteration
-        let n_new_line = (self.config.length_ms / self.config.step_ms - 1).max(1);
-        if self.n_iter % n_new_line == 0 && self.n_samples_keep > 0 && pcmf32.len() >= self.n_samples_keep {
-            self.pcmf32_old = pcmf32[pcmf32.len() - self.n_samples_keep..].to_vec();
+        // At n_new_line boundary (stream.cpp lines 408-425)
+        if self.n_iter % self.n_new_line == 0 {
+            if self.n_samples_keep > 0 && pcmf32.len() >= self.n_samples_keep {
+                self.pcmf32_old = pcmf32[pcmf32.len() - self.n_samples_keep..].to_vec();
+            }
+
+            if !self.config.no_context {
+                self.collect_prompt_tokens();
+            }
         }
 
         Ok(Some(segments))
@@ -711,7 +731,12 @@ impl WhisperStreamPcm {
             return Ok(Vec::new());
         }
 
-        self.state.full(self.params.clone(), audio)?;
+        let mut params = self.params.clone();
+        if !self.config.no_context && !self.prompt_tokens.is_empty() {
+            params = params.prompt_tokens(&self.prompt_tokens);
+        }
+
+        self.state.full(params, audio)?;
 
         let n_segments = self.state.full_n_segments();
         let mut segments = Vec::with_capacity(n_segments as usize);
@@ -730,6 +755,20 @@ impl WhisperStreamPcm {
         }
 
         Ok(segments)
+    }
+
+    /// Collect prompt tokens from last inference — port of stream.cpp lines 416-425.
+    fn collect_prompt_tokens(&mut self) {
+        self.prompt_tokens.clear();
+
+        let n_segments = self.state.full_n_segments();
+        for i in 0..n_segments {
+            let token_count = self.state.full_n_tokens(i);
+            for j in 0..token_count {
+                self.prompt_tokens
+                    .push(self.state.full_get_token_id(i, j));
+            }
+        }
     }
 
     /// Get the total number of processed samples.
