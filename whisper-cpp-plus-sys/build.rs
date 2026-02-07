@@ -1,12 +1,16 @@
 use std::env;
 use std::path::{Path, PathBuf};
 
+#[path = "cuda_detect.rs"]
+mod cuda_detect;
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../vendor/whisper.cpp");
     println!("cargo:rerun-if-env-changed=WHISPER_PREBUILT_PATH");
-    println!("cargo:rerun-if-env-changed=CUDA_PATH");
-    println!("cargo:rerun-if-env-changed=CUDA_HOME");
+    for var in &cuda_detect::CUDA_PATH_ENV_VARS {
+        println!("cargo:rerun-if-env-changed={}", var);
+    }
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
 
@@ -52,14 +56,9 @@ fn build_with_cmake(target_os: &str) {
         .define("WHISPER_BUILD_EXAMPLES", "OFF")
         .pic(true);
 
-    // Feature-gated CMake flags
+    // Feature-gated CMake flags (cmake handles toolkit discovery internally)
     if cfg!(feature = "cuda") {
         config.define("GGML_CUDA", "ON");
-        // Help CMake find the CUDA toolkit — MSBuild integration alone isn't enough
-        if let Some(cuda_path) = find_cuda_path() {
-            config.define("CMAKE_CUDA_TOOLKIT_ROOT_DIR", &cuda_path);
-            config.define("CUDAToolkit_ROOT", &cuda_path);
-        }
     }
     if cfg!(feature = "metal") {
         config.define("GGML_METAL", "ON");
@@ -112,43 +111,6 @@ fn build_with_cmake(target_os: &str) {
     }
 }
 
-/// Try to find CUDA toolkit path from env vars or standard locations.
-/// Returns None if not found (cmake may still find it via its own detection).
-fn find_cuda_path() -> Option<String> {
-    if let Ok(p) = env::var("CUDA_PATH") {
-        if PathBuf::from(&p).exists() {
-            return Some(p);
-        }
-    }
-    if let Ok(p) = env::var("CUDA_HOME") {
-        if PathBuf::from(&p).exists() {
-            return Some(p);
-        }
-    }
-    // Windows standard install
-    let base = PathBuf::from(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA");
-    if base.exists() {
-        if let Ok(entries) = std::fs::read_dir(&base) {
-            let mut versions: Vec<PathBuf> = entries
-                .filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.is_dir())
-                .collect();
-            versions.sort();
-            if let Some(latest) = versions.last() {
-                return Some(latest.to_string_lossy().to_string());
-            }
-        }
-    }
-    // Linux standard paths
-    for p in &["/usr/local/cuda", "/usr/lib/cuda", "/opt/cuda"] {
-        if PathBuf::from(p).exists() {
-            return Some(p.to_string());
-        }
-    }
-    None
-}
-
 /// Recursively copy a directory, skipping `.git` entries.
 fn copy_dir_filtered(src: &Path, dst: &Path) {
     std::fs::create_dir_all(dst).expect("failed to create destination directory");
@@ -165,7 +127,12 @@ fn copy_dir_filtered(src: &Path, dst: &Path) {
             copy_dir_filtered(&src_path, &dst_path);
         } else if ft.is_file() {
             std::fs::copy(&src_path, &dst_path).unwrap_or_else(|e| {
-                panic!("failed to copy {} -> {}: {}", src_path.display(), dst_path.display(), e)
+                panic!(
+                    "failed to copy {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                )
             });
         }
         // Skip symlinks and other special files
@@ -278,7 +245,6 @@ fn check_and_use_prebuilt(target_os: &str) -> Option<PathBuf> {
 fn link_prebuilt_ggml_libs(dir: &Path, target_os: &str) {
     let ext = if target_os == "windows" { "lib" } else { "a" };
 
-    // ggml satellite libs that CMake may produce
     let optional_libs = ["ggml", "ggml-base", "ggml-cpu"];
     for lib in &optional_libs {
         let filename = if target_os == "windows" {
@@ -291,7 +257,6 @@ fn link_prebuilt_ggml_libs(dir: &Path, target_os: &str) {
         }
     }
 
-    // CUDA satellite lib
     #[cfg(feature = "cuda")]
     {
         let cuda_filename = if target_os == "windows" {
@@ -347,16 +312,34 @@ fn link_platform_libs(target_os: &str) {
 fn link_accelerator_libs(_target_os: &str) {
     #[cfg(feature = "cuda")]
     {
-        // CUDA toolkit libs still needed at link time.
-        // CMake handles CUDA discovery during build, but we still need
-        // to tell rustc where the toolkit libs are.
-        let cuda_path = find_cuda_toolkit();
-        let lib_dir = if _target_os == "windows" {
-            cuda_path.join("lib").join("x64")
-        } else {
-            cuda_path.join("lib64")
-        };
-        println!("cargo:rustc-link-search=native={}", lib_dir.display());
+        // CMake compiles ggml-cuda, but the final binary still needs
+        // the CUDA toolkit runtime libs at link time.
+        if cuda_detect::cuda_roots_from_env().is_empty() {
+            println!(
+                "cargo:warning=No CUDA path env var set ({:?}), probing standard locations",
+                cuda_detect::CUDA_PATH_ENV_VARS
+            );
+        }
+        let search_paths = cuda_detect::cuda_lib_search_paths();
+        if search_paths.is_empty() {
+            panic!(
+                "\n\n\
+                 ======================================================\n\
+                 CUDA toolkit not found.\n\n\
+                 Set one of these environment variables:\n\
+                 - CUDA_PATH\n\
+                 - CUDA_HOME\n\
+                 - CUDA_ROOT\n\
+                 - CUDA_TOOLKIT_ROOT_DIR\n\n\
+                 Or install CUDA toolkit to a standard location:\n\
+                 - Windows: C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\vX.Y\n\
+                 - Linux: /usr/local/cuda\n\
+                 ======================================================"
+            );
+        }
+        for path in &search_paths {
+            println!("cargo:rustc-link-search=native={}", path.display());
+        }
         println!("cargo:rustc-link-lib=cudart_static");
         println!("cargo:rustc-link-lib=cublas");
         println!("cargo:rustc-link-lib=cublasLt");
@@ -376,27 +359,6 @@ fn link_accelerator_libs(_target_os: &str) {
     {
         println!("cargo:rustc-link-lib=openblas");
     }
-}
-
-/// Locate CUDA toolkit installation directory, or panic with instructions.
-#[cfg(feature = "cuda")]
-fn find_cuda_toolkit() -> PathBuf {
-    if let Some(p) = find_cuda_path() {
-        println!("cargo:warning=Using CUDA toolkit from: {}", p);
-        return PathBuf::from(p);
-    }
-    panic!(
-        "\n\n\
-         ======================================================\n\
-         CUDA toolkit not found.\n\n\
-         Set one of these environment variables:\n\
-         - CUDA_PATH (checked first)\n\
-         - CUDA_HOME\n\n\
-         Or install CUDA toolkit to a standard location:\n\
-         - Windows: C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\vX.Y\n\
-         - Linux: /usr/local/cuda\n\
-         ======================================================"
-    );
 }
 
 // ---------------------------------------------------------------------------
