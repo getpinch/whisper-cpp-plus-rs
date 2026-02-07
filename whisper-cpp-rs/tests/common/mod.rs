@@ -18,12 +18,14 @@ impl TestModels {
         Self::find_model(name, &[
             // Env override
             std::env::var("WHISPER_TEST_MODEL_DIR").ok(),
-            // Crate-relative (when running from whisper-cpp-rs/)
+            // Crate-relative (when running from whisper-cpp-rs/ crate dir)
             Some("tests/models".to_string()),
-            // Workspace-relative (when running from root)
+            // Workspace-relative (when running from workspace root)
             Some("whisper-cpp-rs/tests/models".to_string()),
-            // Fallback to whisper.cpp test stubs
+            // Fallback to whisper.cpp test stubs (workspace-relative)
             Some("vendor/whisper.cpp/models".to_string()),
+            // Fallback to whisper.cpp test stubs (crate-relative)
+            Some("../vendor/whisper.cpp/models".to_string()),
         ])
     }
 
@@ -43,6 +45,7 @@ impl TestModels {
             // Fallback to whisper.cpp's VAD test model
             Self::find_model("for-tests-silero-v6.2.0-ggml.bin", &[
                 Some("vendor/whisper.cpp/models".to_string()),
+                Some("../vendor/whisper.cpp/models".to_string()),
             ])
         })
     }
@@ -54,6 +57,7 @@ impl TestModels {
             Some("tests/audio".to_string()),
             Some("whisper-cpp-rs/tests/audio".to_string()),
             Some("vendor/whisper.cpp/samples".to_string()),
+            Some("../vendor/whisper.cpp/samples".to_string()),
         ])
     }
 
@@ -80,7 +84,7 @@ macro_rules! skip_if_no_model {
         let Some(path) = $path else {
             eprintln!(
                 "Skipping test: {} not found.\n\
-                 Set WHISPER_TEST_MODEL_DIR or place models in tests/models/",
+                 Run `cargo xtask test-setup` to download test models.",
                 $model_name
             );
             return;

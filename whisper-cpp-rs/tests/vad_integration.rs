@@ -67,15 +67,12 @@ fn test_vad_with_jfk_audio() {
     let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
 
     if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping VAD test: VAD model not found at {}", vad_model_path);
-        eprintln!("Download it with:");
-        eprintln!("  curl -L -o {} \\", vad_model_path);
-        eprintln!("    https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin");
+        eprintln!("Skipping: VAD model not found at {}. Run `cargo xtask test-setup`", vad_model_path);
         return;
     }
 
     if !Path::new(jfk_path).exists() {
-        eprintln!("Skipping VAD test: JFK audio not found at {}", jfk_path);
+        eprintln!("Skipping: JFK audio not found at {}. Run `cargo xtask test-setup`", jfk_path);
         return;
     }
 
@@ -173,7 +170,7 @@ fn test_vad_with_transcription() {
     if !Path::new(vad_model_path).exists() ||
        !Path::new(whisper_model_path).exists() ||
        !Path::new(jfk_path).exists() {
-        eprintln!("Skipping VAD+transcription test: required models or audio not found");
+        eprintln!("Skipping: models/audio not found. Run `cargo xtask test-setup`");
         return;
     }
 
@@ -257,8 +254,7 @@ fn test_vad_with_silence() {
     let vad_model_path = "tests/models/ggml-silero-vad.bin";
 
     if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping VAD silence test: VAD model not found at {}", vad_model_path);
-        eprintln!("Current directory: {:?}", std::env::current_dir());
+        eprintln!("Skipping: VAD model not found at {}. Run `cargo xtask test-setup`", vad_model_path);
         return;
     }
 
@@ -287,7 +283,7 @@ fn test_vad_with_mixed_audio() {
     let vad_model_path = "tests/models/ggml-silero-vad.bin";
 
     if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping VAD mixed audio test: VAD model not found");
+        eprintln!("Skipping: VAD model not found. Run `cargo xtask test-setup`");
         return;
     }
 

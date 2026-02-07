@@ -34,6 +34,13 @@ enum Commands {
 
     /// Show information about prebuilt libraries
     Info,
+
+    /// Download test models (whisper tiny.en + Silero VAD)
+    TestSetup {
+        /// Force re-download even if models exist
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -48,6 +55,9 @@ fn main() -> Result<()> {
         }
         Commands::Info => {
             info()?;
+        }
+        Commands::TestSetup { force } => {
+            test_setup(force)?;
         }
     }
 
@@ -280,6 +290,47 @@ fn info() -> Result<()> {
         }
     }
 
+    Ok(())
+}
+
+fn test_setup(force: bool) -> Result<()> {
+    let root = project_root()?;
+    let models_dir = root.join("vendor").join("whisper.cpp").join("models");
+
+    println!("Setting up test models in {}", models_dir.display());
+    println!();
+
+    let models: &[(&str, &str, &str)] = &[
+        ("ggml-tiny.en.bin", "download-ggml-model.cmd", "tiny.en"),
+        ("ggml-silero-v6.2.0.bin", "download-vad-model.cmd", "silero-v6.2.0"),
+    ];
+
+    for (filename, script, arg) in models {
+        let model_path = models_dir.join(filename);
+
+        if model_path.exists() && !force {
+            println!("  [skip] {} (already exists)", filename);
+            continue;
+        }
+
+        if force && model_path.exists() {
+            fs::remove_file(&model_path)?;
+        }
+
+        println!("  [download] {} ...", filename);
+        let script_path = models_dir.join(script);
+        let status = std::process::Command::new("cmd")
+            .args(["/c", &script_path.to_string_lossy(), arg, &models_dir.to_string_lossy()])
+            .status()
+            .context(format!("Failed to run {}", script))?;
+
+        if !status.success() {
+            anyhow::bail!("Download failed for {}", filename);
+        }
+    }
+
+    println!();
+    println!("Done! Run tests with: cargo test --test stream_pcm_integration -- --nocapture");
     Ok(())
 }
 

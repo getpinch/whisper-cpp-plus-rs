@@ -9,7 +9,7 @@ use whisper_cpp_rs::{
 #[test]
 fn test_model_loading() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found (expected in CI)");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -30,7 +30,7 @@ fn test_invalid_model_path() {
 #[test]
 fn test_silence_handling() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -47,7 +47,7 @@ fn test_silence_handling() {
 #[test]
 fn test_concurrent_states() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -70,7 +70,7 @@ fn test_concurrent_states() {
 #[test]
 fn test_transcription_with_params() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -130,7 +130,7 @@ fn test_beam_search_strategy() {
 #[test]
 fn test_model_info() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -151,7 +151,7 @@ fn test_model_info() {
 #[test]
 fn test_segment_timestamps() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -178,7 +178,7 @@ fn test_segment_timestamps() {
 #[test]
 fn test_state_reuse() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 
@@ -206,7 +206,7 @@ fn test_state_reuse() {
 #[test]
 fn test_empty_audio_error() {
     let Some(model_path) = TestModels::tiny_en() else {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     };
 

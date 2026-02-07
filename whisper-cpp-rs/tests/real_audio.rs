@@ -35,14 +35,14 @@ fn test_jfk_transcription() {
     // Skip if model doesn't exist
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found at {}", model_path);
+        eprintln!("Skipping: model not found at {}. Run `cargo xtask test-setup`", model_path);
         return;
     }
 
     // Load the JFK audio sample
     let audio_path = "../vendor/whisper.cpp/samples/jfk.wav";
     if !Path::new(audio_path).exists() {
-        eprintln!("Skipping test: JFK audio sample not found at {}", audio_path);
+        eprintln!("Skipping: JFK audio not found at {}. Run `cargo xtask test-setup`", audio_path);
         return;
     }
 
@@ -84,7 +84,7 @@ fn test_jfk_transcription() {
 fn test_audio_duration_handling() {
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 
@@ -116,7 +116,7 @@ fn test_stereo_to_mono_conversion() {
 
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 

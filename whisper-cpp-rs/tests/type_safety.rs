@@ -40,7 +40,7 @@ fn test_arc_context_thread_safety() {
     // Skip if model doesn't exist
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 
@@ -98,7 +98,7 @@ fn test_lifetime_safety() {
     // This is enforced through lifetime parameters in WhisperState
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 
@@ -131,7 +131,7 @@ fn test_buffer_safety() {
     // Test that audio buffer handling is safe
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 
@@ -178,7 +178,7 @@ fn test_drop_safety() {
     // Test that Drop implementations are safe and don't cause double-free
     let model_path = "tests/models/ggml-tiny.en.bin";
     if !std::path::Path::new(model_path).exists() {
-        eprintln!("Skipping test: model file not found");
+        eprintln!("Skipping: model not found. Run `cargo xtask test-setup`");
         return;
     }
 
