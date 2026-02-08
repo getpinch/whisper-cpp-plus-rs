@@ -517,6 +517,11 @@ impl WhisperStreamPcm {
         })
     }
 
+    /// Returns `true` when the underlying reader has hit EOF and all samples are drained.
+    pub fn is_eof(&self) -> bool {
+        self.reader.is_eof() && self.reader.available_samples() == 0
+    }
+
     /// Run one iteration of the main loop.
     ///
     /// Returns `Ok(Some(segments))` if transcription occurred,
