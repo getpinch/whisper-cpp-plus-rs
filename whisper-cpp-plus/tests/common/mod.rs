@@ -1,6 +1,6 @@
 //! Common test utilities for whisper-cpp-plus tests
 //!
-//! Provides path resolution that works from both crate and workspace root.
+//! Provides path resolution: env var override → submodule fallback
 
 use std::path::{Path, PathBuf};
 
@@ -9,23 +9,15 @@ pub struct TestModels;
 
 impl TestModels {
     /// Get path to a whisper model file.
-    /// Checks multiple locations in order:
-    /// 1. WHISPER_TEST_MODEL_DIR env var
-    /// 2. tests/models/ (crate-relative)
-    /// 3. whisper-cpp-plus/tests/models/ (workspace-relative)
-    /// 4. vendor/whisper.cpp/models/ (for stub test models)
+    /// Checks: 1. WHISPER_TEST_MODEL_DIR env var, 2. submodule paths
     pub fn whisper_model(name: &str) -> Option<PathBuf> {
         Self::find_model(name, &[
-            // Env override
+            // Env override (for consumers)
             std::env::var("WHISPER_TEST_MODEL_DIR").ok(),
-            // Crate-relative (when running from whisper-cpp-plus/ crate dir)
-            Some("tests/models".to_string()),
-            // Workspace-relative (when running from workspace root)
-            Some("whisper-cpp-plus/tests/models".to_string()),
-            // Fallback to whisper.cpp test stubs (workspace-relative)
-            Some("vendor/whisper.cpp/models".to_string()),
-            // Fallback to whisper.cpp test stubs (crate-relative)
-            Some("../vendor/whisper.cpp/models".to_string()),
+            // whisper.cpp submodule (crate-relative)
+            Some("../whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
+            // whisper.cpp submodule (workspace-relative)
+            Some("whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
         ])
     }
 
@@ -38,14 +30,17 @@ impl TestModels {
     /// Get path to VAD model
     pub fn vad() -> Option<PathBuf> {
         Self::find_model("ggml-silero-vad.bin", &[
+            // Env override (for consumers)
             std::env::var("WHISPER_TEST_MODEL_DIR").ok(),
-            Some("tests/models".to_string()),
-            Some("whisper-cpp-plus/tests/models".to_string()),
+            // whisper.cpp submodule (crate-relative)
+            Some("../whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
+            // whisper.cpp submodule (workspace-relative)
+            Some("whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
         ]).or_else(|| {
-            // Fallback to whisper.cpp's VAD test model
+            // Fallback to whisper.cpp's test VAD model
             Self::find_model("for-tests-silero-v6.2.0-ggml.bin", &[
-                Some("vendor/whisper.cpp/models".to_string()),
-                Some("../vendor/whisper.cpp/models".to_string()),
+                Some("../whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
+                Some("whisper-cpp-plus-sys/whisper.cpp/models".to_string()),
             ])
         })
     }
@@ -53,11 +48,12 @@ impl TestModels {
     /// Get path to test audio file
     pub fn audio(name: &str) -> Option<PathBuf> {
         Self::find_model(name, &[
+            // Env override (for consumers)
             std::env::var("WHISPER_TEST_AUDIO_DIR").ok(),
-            Some("tests/audio".to_string()),
-            Some("whisper-cpp-plus/tests/audio".to_string()),
-            Some("vendor/whisper.cpp/samples".to_string()),
-            Some("../vendor/whisper.cpp/samples".to_string()),
+            // whisper.cpp submodule samples (crate-relative)
+            Some("../whisper-cpp-plus-sys/whisper.cpp/samples".to_string()),
+            // whisper.cpp submodule samples (workspace-relative)
+            Some("whisper-cpp-plus-sys/whisper.cpp/samples".to_string()),
         ])
     }
 
@@ -104,10 +100,10 @@ mod tests {
         let tiny = TestModels::tiny_en();
         println!("tiny.en model path: {:?}", tiny);
 
-        // The whisper.cpp stubs should always exist
-        let stub_path = Path::new("vendor/whisper.cpp/models/for-tests-ggml-tiny.en.bin");
+        // The whisper.cpp stubs should always exist in submodule
+        let stub_path = Path::new("../whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin");
         let stub_exists = stub_path.exists() ||
-            Path::new("whisper-cpp-plus/../vendor/whisper.cpp/models/for-tests-ggml-tiny.en.bin").exists();
+            Path::new("whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin").exists();
 
         // In CI without models, we at least have the stubs
         if tiny.is_none() && !stub_exists {

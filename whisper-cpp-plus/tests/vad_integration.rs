@@ -3,6 +3,47 @@
 use std::path::Path;
 use whisper_cpp_plus::{WhisperVadProcessor, VadParams, VadParamsBuilder, WhisperContext, FullParams, SamplingStrategy};
 
+/// Find VAD model (env var or default paths)
+fn find_vad_model() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_MODEL_DIR") {
+        let p = format!("{}/ggml-silero-vad.bin", dir);
+        if Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "tests/models/ggml-silero-vad.bin",
+        "../whisper-cpp-plus-sys/whisper.cpp/models/for-tests-silero-v6.2.0-ggml.bin",
+        "whisper-cpp-plus-sys/whisper.cpp/models/for-tests-silero-v6.2.0-ggml.bin",
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+}
+
+/// Find Whisper model (env var or default paths)
+fn find_whisper_model() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_MODEL_DIR") {
+        let p = format!("{}/ggml-tiny.en.bin", dir);
+        if Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "tests/models/ggml-tiny.en.bin",
+        "../whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin",
+        "whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin",
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+}
+
+/// Find JFK audio (env var or default paths)
+fn find_jfk_audio() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let p = format!("{}/jfk.wav", dir);
+        if Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+}
+
 /// Load WAV file and convert to 16kHz mono f32
 fn load_wav_16khz_mono(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     use hound;
@@ -61,23 +102,24 @@ fn load_wav_16khz_mono(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error
 
 #[test]
 fn test_vad_with_jfk_audio() {
-    // Check if both models exist
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    let whisper_model_path = "tests/models/ggml-tiny.en.bin";
-    let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    // Check if both models exist (env var or default paths)
+    let vad_model_path = find_vad_model();
+    let jfk_path = find_jfk_audio();
 
-    if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping: VAD model not found at {}. Run `cargo xtask test-setup`", vad_model_path);
+    if vad_model_path.is_none() {
+        eprintln!("Skipping: VAD model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`");
         return;
     }
 
-    if !Path::new(jfk_path).exists() {
-        eprintln!("Skipping: JFK audio not found at {}. Run `cargo xtask test-setup`", jfk_path);
+    if jfk_path.is_none() {
+        eprintln!("Skipping: JFK audio not found. Set WHISPER_TEST_AUDIO_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
+    let jfk_path = jfk_path.unwrap();
 
     // Load the JFK audio
-    let audio = load_wav_16khz_mono(jfk_path).expect("Failed to load JFK audio");
+    let audio = load_wav_16khz_mono(&jfk_path).expect("Failed to load JFK audio");
     let audio_duration_s = audio.len() as f32 / 16000.0;
 
     println!("Loaded JFK audio: {} samples ({:.2}s)", audio.len(), audio_duration_s);
@@ -163,19 +205,20 @@ fn test_vad_with_jfk_audio() {
 #[test]
 fn test_vad_with_transcription() {
     // This test combines VAD with actual transcription
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    let whisper_model_path = "tests/models/ggml-tiny.en.bin";
-    let jfk_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    let vad_model_path = find_vad_model();
+    let whisper_model_path = find_whisper_model();
+    let jfk_path = find_jfk_audio();
 
-    if !Path::new(vad_model_path).exists() ||
-       !Path::new(whisper_model_path).exists() ||
-       !Path::new(jfk_path).exists() {
-        eprintln!("Skipping: models/audio not found. Run `cargo xtask test-setup`");
+    if vad_model_path.is_none() || whisper_model_path.is_none() || jfk_path.is_none() {
+        eprintln!("Skipping: models/audio not found. Set WHISPER_TEST_MODEL_DIR/WHISPER_TEST_AUDIO_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
+    let whisper_model_path = whisper_model_path.unwrap();
+    let jfk_path = jfk_path.unwrap();
 
     // Load audio
-    let audio = load_wav_16khz_mono(jfk_path).expect("Failed to load JFK audio");
+    let audio = load_wav_16khz_mono(&jfk_path).expect("Failed to load JFK audio");
 
     // Initialize models
     let mut vad = WhisperVadProcessor::new(vad_model_path)
@@ -251,14 +294,15 @@ fn test_vad_with_transcription() {
 #[test]
 fn test_vad_with_silence() {
     // Test VAD with pure silence
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
+    let vad_model_path = find_vad_model();
 
-    if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping: VAD model not found at {}. Run `cargo xtask test-setup`", vad_model_path);
+    if vad_model_path.is_none() {
+        eprintln!("Skipping: VAD model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
 
-    let mut vad = WhisperVadProcessor::new(vad_model_path)
+    let mut vad = WhisperVadProcessor::new(&vad_model_path)
         .expect("Failed to load VAD model");
 
     // Create 3 seconds of silence
@@ -280,14 +324,15 @@ fn test_vad_with_silence() {
 #[test]
 fn test_vad_with_mixed_audio() {
     // Test VAD with artificially created mixed audio (speech-like noise + silence)
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
+    let vad_model_path = find_vad_model();
 
-    if !Path::new(vad_model_path).exists() {
-        eprintln!("Skipping: VAD model not found. Run `cargo xtask test-setup`");
+    if vad_model_path.is_none() {
+        eprintln!("Skipping: VAD model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
 
-    let mut vad = WhisperVadProcessor::new(vad_model_path)
+    let mut vad = WhisperVadProcessor::new(&vad_model_path)
         .expect("Failed to load VAD model");
 
     // Create artificial audio: noise, silence, noise, silence pattern

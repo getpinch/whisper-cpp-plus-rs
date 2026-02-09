@@ -58,27 +58,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Find model file in common locations
 fn find_model(name: &str) -> Option<PathBuf> {
-    // Check env var first
-    if let Ok(dir) = std::env::var("WHISPER_MODEL_PATH") {
-        let path = Path::new(&dir).join(name);
-        if path.exists() {
-            return Some(path);
-        }
-        // Also try if env var points directly to a model file
-        let path = PathBuf::from(&dir);
-        if path.exists() && path.is_file() {
-            return Some(path);
+    // Check env vars first (WHISPER_TEST_MODEL_DIR or WHISPER_MODEL_PATH)
+    for env_var in ["WHISPER_TEST_MODEL_DIR", "WHISPER_MODEL_PATH"] {
+        if let Ok(dir) = std::env::var(env_var) {
+            let path = Path::new(&dir).join(name);
+            if path.exists() {
+                return Some(path);
+            }
+            // Also try if env var points directly to a model file
+            let path = PathBuf::from(&dir);
+            if path.exists() && path.is_file() {
+                return Some(path);
+            }
         }
     }
 
     // Common locations to check
     let search_paths = [
-        // Workspace-relative (running from root)
-        format!("whisper-cpp-plus/tests/models/{}", name),
         // Crate-relative (running from whisper-cpp-plus/)
         format!("tests/models/{}", name),
-        // whisper.cpp models directory
-        format!("vendor/whisper.cpp/models/{}", name),
+        // Workspace-relative (running from root)
+        format!("whisper-cpp-plus/tests/models/{}", name),
+        // whisper.cpp submodule (crate-relative)
+        format!("../whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+        // whisper.cpp submodule (workspace-relative)
+        format!("whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
         // Current directory
         name.to_string(),
     ];
@@ -95,12 +99,23 @@ fn find_model(name: &str) -> Option<PathBuf> {
 
 /// Find and load audio file
 fn find_and_load_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    // Check env var first
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let path = Path::new(&dir).join("jfk.wav");
+        if path.exists() {
+            println!("Loading audio from: {}", path.display());
+            return load_wav_file(path.to_str().unwrap());
+        }
+    }
+
     let audio_paths = [
-        // whisper.cpp samples
-        "vendor/whisper.cpp/samples/jfk.wav",
         // Crate test audio
         "tests/audio/jfk.wav",
         "whisper-cpp-plus/tests/audio/jfk.wav",
+        // whisper.cpp submodule samples (crate-relative)
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        // whisper.cpp submodule samples (workspace-relative)
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
         // User samples
         "samples/test.wav",
     ];
@@ -112,7 +127,7 @@ fn find_and_load_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         }
     }
 
-    Err("No audio files found. Please provide audio at vendor/whisper.cpp/samples/jfk.wav".into())
+    Err("No audio files found. Set WHISPER_TEST_AUDIO_DIR or provide audio at tests/audio/jfk.wav".into())
 }
 
 fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {

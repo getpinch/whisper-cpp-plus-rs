@@ -5,11 +5,33 @@ use whisper_cpp_plus::bench_helpers::{WhisperVadProcessor, VadParams};
 use whisper_cpp_plus::enhanced::vad::{EnhancedWhisperVadProcessor, EnhancedVadParamsBuilder};
 use std::time::Duration;
 
+fn find_vad_model() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_MODEL_DIR") {
+        let p = format!("{}/ggml-silero-vad.bin", dir);
+        if std::path::Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "tests/models/ggml-silero-vad.bin",
+        "../whisper-cpp-plus-sys/whisper.cpp/models/for-tests-silero-v6.2.0-ggml.bin",
+        "whisper-cpp-plus-sys/whisper.cpp/models/for-tests-silero-v6.2.0-ggml.bin",
+    ];
+    paths.iter().find(|p| std::path::Path::new(p).exists()).map(|s| s.to_string())
+}
+
 fn load_jfk_audio() -> Vec<f32> {
-    // Try multiple locations for the audio file
+    // Check env var first
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let p = format!("{}/jfk.wav", dir);
+        if std::path::Path::new(&p).exists() {
+            eprintln!("Loading JFK audio from: {}", p);
+            return load_wav_file(&p).unwrap();
+        }
+    }
+
+    // Try standard locations
     let paths = vec![
-        "vendor/whisper.cpp/samples/jfk.wav",
-        "../vendor/whisper.cpp/samples/jfk.wav",
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
         "samples/benchmark_audio.wav",
     ];
 
@@ -24,17 +46,14 @@ fn load_jfk_audio() -> Vec<f32> {
     }
 
     eprintln!("\nError: No audio files found for benchmarks!");
-    eprintln!("Please provide audio at one of these locations:");
+    eprintln!("Set WHISPER_TEST_AUDIO_DIR or provide audio at:");
     for path in &paths {
         eprintln!("  - {}", path);
     }
-    eprintln!("\nNote: Benchmarks require real audio for meaningful results.");
-    eprintln!("Falling back to synthetic audio for demonstration only.");
-    eprintln!("Results will not be representative of real performance!\n");
+    eprintln!("Falling back to synthetic audio for demonstration only.\n");
 
     // Still generate synthetic as last resort for CI/testing
-    generate_synthetic_speech(11) // JFK clip is ~11 seconds
-
+    generate_synthetic_speech(11)
 }
 
 fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -106,12 +125,12 @@ fn generate_synthetic_speech(duration_seconds: usize) -> Vec<f32> {
 
 fn benchmark_vad_processing(c: &mut Criterion) {
     // Skip if model doesn't exist
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    if !std::path::Path::new(vad_model_path).exists() {
-        eprintln!("VAD model not found at {}. Skipping VAD benchmarks.", vad_model_path);
-        eprintln!("Looking for model in tests/models/ directory");
+    let vad_model_path = find_vad_model();
+    if vad_model_path.is_none() {
+        eprintln!("VAD model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
 
     let mut group = c.benchmark_group("vad_processing");
     group.measurement_time(Duration::from_secs(10));
@@ -135,11 +154,12 @@ fn benchmark_vad_processing(c: &mut Criterion) {
 
     for (name, audio) in test_audios.iter() {
         // Benchmark standard VAD
+        let model_path = vad_model_path.clone();
         group.bench_with_input(
             BenchmarkId::new("standard", name),
             audio,
             |b, audio| {
-                let mut vad = WhisperVadProcessor::new(vad_model_path).unwrap();
+                let mut vad = WhisperVadProcessor::new(&model_path).unwrap();
                 let params = VadParams::default();
                 b.iter(|| {
                     let segments = vad.segments_from_samples(black_box(audio), &params).unwrap();
@@ -149,11 +169,12 @@ fn benchmark_vad_processing(c: &mut Criterion) {
         );
 
         // Benchmark enhanced VAD with aggregation
+        let model_path = vad_model_path.clone();
         group.bench_with_input(
             BenchmarkId::new("enhanced_aggregated", name),
             audio,
             |b, audio| {
-                let mut vad = EnhancedWhisperVadProcessor::new(vad_model_path).unwrap();
+                let mut vad = EnhancedWhisperVadProcessor::new(&model_path).unwrap();
                 let params = EnhancedVadParamsBuilder::new()
                     .max_segment_duration(30.0)
                     .merge_segments(true)
@@ -172,13 +193,14 @@ fn benchmark_vad_processing(c: &mut Criterion) {
 
 fn benchmark_segment_aggregation(c: &mut Criterion) {
     // Skip if model doesn't exist (needed for real processor)
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    if !std::path::Path::new(vad_model_path).exists() {
+    let vad_model_path = find_vad_model();
+    if vad_model_path.is_none() {
         eprintln!("VAD model not found, skipping segment aggregation benchmarks");
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
 
-    let processor = EnhancedWhisperVadProcessor::new(vad_model_path).unwrap();
+    let processor = EnhancedWhisperVadProcessor::new(&vad_model_path).unwrap();
     let mut group = c.benchmark_group("segment_aggregation");
 
     // Create different segment patterns
@@ -247,10 +269,11 @@ fn benchmark_segment_aggregation(c: &mut Criterion) {
 }
 
 fn benchmark_vad_efficiency_metrics(c: &mut Criterion) {
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    if !std::path::Path::new(vad_model_path).exists() {
+    let vad_model_path = find_vad_model();
+    if vad_model_path.is_none() {
         return;
     }
+    let vad_model_path = vad_model_path.unwrap();
 
     let mut group = c.benchmark_group("vad_efficiency");
     group.measurement_time(Duration::from_secs(5));
@@ -267,8 +290,9 @@ fn benchmark_vad_efficiency_metrics(c: &mut Criterion) {
     // Total: ~29 seconds (7s silence + 22s speech)
 
     // Measure VAD processing without sleep simulation
+    let model_path = vad_model_path.clone();
     group.bench_function("standard_vad_processing", |b| {
-        let mut vad = WhisperVadProcessor::new(vad_model_path).unwrap();
+        let mut vad = WhisperVadProcessor::new(&model_path).unwrap();
         let params = VadParams::default();
 
         b.iter(|| {
@@ -285,8 +309,9 @@ fn benchmark_vad_efficiency_metrics(c: &mut Criterion) {
     });
 
     // Measure enhanced VAD with aggregation
+    let model_path = vad_model_path.clone();
     group.bench_function("enhanced_vad_processing", |b| {
-        let mut vad = EnhancedWhisperVadProcessor::new(vad_model_path).unwrap();
+        let mut vad = EnhancedWhisperVadProcessor::new(&model_path).unwrap();
         let params = EnhancedVadParamsBuilder::new()
             .max_segment_duration(30.0)
             .merge_segments(true)

@@ -5,11 +5,12 @@ use whisper_cpp_plus::{WhisperVadProcessor, VadParams};
 use whisper_cpp_plus::enhanced::vad::{EnhancedWhisperVadProcessor, EnhancedVadParamsBuilder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Check for required files
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-    let audio_path = "../vendor/whisper.cpp/samples/jfk.wav";
+    // Check for required files (env var or default path)
+    let vad_model_path = std::env::var("WHISPER_TEST_MODEL_DIR")
+        .map(|d| format!("{}/ggml-silero-vad.bin", d))
+        .unwrap_or_else(|_| "tests/models/ggml-silero-vad.bin".to_string());
 
-    if !Path::new(vad_model_path).exists() {
+    if !Path::new(&vad_model_path).exists() {
         eprintln!("VAD model not found at: {}", vad_model_path);
         return Ok(());
     }
@@ -24,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Run standard VAD
     println!("1. STANDARD VAD:");
     println!("{}", "-".repeat(50));
-    let mut standard_vad = WhisperVadProcessor::new(vad_model_path)?;
+    let mut standard_vad = WhisperVadProcessor::new(&vad_model_path)?;
     let standard_params = VadParams::default();
 
     let start = std::time::Instant::now();
@@ -54,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Run enhanced VAD with aggregation
     println!("\n2. ENHANCED VAD WITH AGGREGATION:");
     println!("{}", "-".repeat(50));
-    let mut enhanced_vad = EnhancedWhisperVadProcessor::new(vad_model_path)?;
+    let mut enhanced_vad = EnhancedWhisperVadProcessor::new(&vad_model_path)?;
     let enhanced_params = EnhancedVadParamsBuilder::new()
         .max_segment_duration(30.0)
         .merge_segments(true)
@@ -126,10 +127,19 @@ fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
 }
 
 fn load_audio_example() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    // Try multiple locations for the audio file
+    // Check env var first
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let path = Path::new(&dir).join("jfk.wav");
+        if path.exists() {
+            println!("Loading audio from: {}", path.display());
+            return load_wav_file(path.to_str().unwrap());
+        }
+    }
+
     let paths = vec![
-        "vendor/whisper.cpp/samples/jfk.wav",
-        "../vendor/whisper.cpp/samples/jfk.wav",
+        // whisper.cpp submodule samples
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
         "samples/audio.wav",
     ];
 
@@ -141,10 +151,9 @@ fn load_audio_example() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     }
 
     eprintln!("\nError: No audio files found!");
-    eprintln!("Please provide audio at one of these locations:");
+    eprintln!("Set WHISPER_TEST_AUDIO_DIR env var or provide audio at one of these locations:");
     for path in &paths {
         eprintln!("  - {}", path);
     }
-    eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful VAD results.");
     Err("No audio files found for VAD comparison".into())
 }

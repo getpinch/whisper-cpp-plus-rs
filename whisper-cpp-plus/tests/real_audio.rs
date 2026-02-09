@@ -2,6 +2,33 @@ use std::path::Path;
 use whisper_cpp_plus::{WhisperContext, FullParams, SamplingStrategy};
 use hound;
 
+/// Find Whisper model (env var or default paths)
+fn find_whisper_model() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_MODEL_DIR") {
+        let p = format!("{}/ggml-tiny.en.bin", dir);
+        if Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "tests/models/ggml-tiny.en.bin",
+        "../whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin",
+        "whisper-cpp-plus-sys/whisper.cpp/models/for-tests-ggml-tiny.en.bin",
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+}
+
+/// Find JFK audio (env var or default paths)
+fn find_jfk_audio() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let p = format!("{}/jfk.wav", dir);
+        if Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+}
+
 /// Load a WAV file and convert to f32 samples
 fn load_wav_file<P: AsRef<Path>>(path: P) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     let mut reader = hound::WavReader::open(path)?;
@@ -32,24 +59,26 @@ fn load_wav_file<P: AsRef<Path>>(path: P) -> Result<Vec<f32>, Box<dyn std::error
 
 #[test]
 fn test_jfk_transcription() {
-    // Skip if model doesn't exist
-    let model_path = "tests/models/ggml-tiny.en.bin";
-    if !Path::new(model_path).exists() {
-        eprintln!("Skipping: model not found at {}. Run `cargo xtask test-setup`", model_path);
+    // Skip if model doesn't exist (env var or default paths)
+    let model_path = find_whisper_model();
+    if model_path.is_none() {
+        eprintln!("Skipping: model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let model_path = model_path.unwrap();
 
     // Load the JFK audio sample
-    let audio_path = "../vendor/whisper.cpp/samples/jfk.wav";
-    if !Path::new(audio_path).exists() {
-        eprintln!("Skipping: JFK audio not found at {}. Run `cargo xtask test-setup`", audio_path);
+    let audio_path = find_jfk_audio();
+    if audio_path.is_none() {
+        eprintln!("Skipping: JFK audio not found. Set WHISPER_TEST_AUDIO_DIR or run `cargo xtask test-setup`");
         return;
     }
+    let audio_path = audio_path.unwrap();
 
-    let audio = load_wav_file(audio_path).expect("Failed to load JFK audio");
+    let audio = load_wav_file(&audio_path).expect("Failed to load JFK audio");
 
     // Create context and transcribe
-    let ctx = WhisperContext::new(model_path).expect("Failed to load model");
+    let ctx = WhisperContext::new(&model_path).expect("Failed to load model");
     let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
     let result = ctx.transcribe_with_full_params(&audio, params)

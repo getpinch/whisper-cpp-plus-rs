@@ -93,18 +93,32 @@ fn benchmark_quality_checks(c: &mut Criterion) {
     group.finish();
 }
 
+fn find_whisper_model() -> Option<String> {
+    if let Ok(dir) = std::env::var("WHISPER_TEST_MODEL_DIR") {
+        let p = format!("{}/ggml-base.en.bin", dir);
+        if std::path::Path::new(&p).exists() { return Some(p); }
+    }
+    let paths = [
+        "tests/models/ggml-base.en.bin",
+        "../whisper-cpp-plus-sys/whisper.cpp/models/ggml-base.en.bin",
+        "whisper-cpp-plus-sys/whisper.cpp/models/ggml-base.en.bin",
+    ];
+    paths.iter().find(|p| std::path::Path::new(p).exists()).map(|s| s.to_string())
+}
+
 fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
     // Skip if model doesn't exist
-    let model_path = "tests/models/ggml-base.en.bin";
-    if !std::path::Path::new(model_path).exists() {
-        eprintln!("Model not found at {}. Skipping transcription benchmarks.", model_path);
+    let model_path = find_whisper_model();
+    if model_path.is_none() {
+        eprintln!("Model not found. Set WHISPER_TEST_MODEL_DIR or run `cargo xtask test-setup`.");
         return;
     }
+    let model_path = model_path.unwrap();
 
     use whisper_cpp_plus::{WhisperContext, TranscriptionParams};
     use std::sync::Arc;
 
-    let ctx = Arc::new(WhisperContext::new(model_path).unwrap());
+    let ctx = Arc::new(WhisperContext::new(&model_path).unwrap());
 
     let mut group = c.benchmark_group("transcription_fallback");
     group.measurement_time(Duration::from_secs(15));
@@ -160,16 +174,27 @@ fn benchmark_transcription_with_fallback_simulation(c: &mut Criterion) {
 }
 
 fn load_benchmark_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
-    let alt_path = "samples/benchmark_audio.wav";
-
-    if std::path::Path::new(jfk_path).exists() {
-        load_wav_file(jfk_path)
-    } else if std::path::Path::new(alt_path).exists() {
-        load_wav_file(alt_path)
-    } else {
-        Err(format!("No audio files found at {} or {}", jfk_path, alt_path).into())
+    // Check env var first
+    if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let p = format!("{}/jfk.wav", dir);
+        if std::path::Path::new(&p).exists() {
+            return load_wav_file(&p);
+        }
     }
+
+    let paths = [
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "samples/benchmark_audio.wav",
+    ];
+
+    for path in paths {
+        if std::path::Path::new(path).exists() {
+            return load_wav_file(path);
+        }
+    }
+
+    Err("No audio files found. Set WHISPER_TEST_AUDIO_DIR.".into())
 }
 
 fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {

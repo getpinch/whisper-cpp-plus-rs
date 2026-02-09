@@ -69,19 +69,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn load_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-    let jfk = "vendor/whisper.cpp/samples/jfk.wav";
-    let alt = "samples/audio.wav";
-
-    let path = if Path::new(jfk).exists() {
-        jfk
-    } else if Path::new(alt).exists() {
-        alt
+    // Check env var first
+    let path = if let Ok(dir) = std::env::var("WHISPER_TEST_AUDIO_DIR") {
+        let p = format!("{}/jfk.wav", dir);
+        if Path::new(&p).exists() { Some(p) } else { None }
     } else {
-        return Err("No audio file found (tried jfk.wav and samples/audio.wav)".into());
+        None
     };
 
+    let path = path.or_else(|| {
+        let paths = [
+            "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+            "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+            "samples/audio.wav",
+        ];
+        paths.iter().find(|p| Path::new(p).exists()).map(|s| s.to_string())
+    });
+
+    let path = path.ok_or("No audio file found. Set WHISPER_TEST_AUDIO_DIR.")?;
+
     println!("Loading audio from {}...", path);
-    let mut reader = hound::WavReader::open(path)?;
+    let mut reader = hound::WavReader::open(&path)?;
     let spec = reader.spec();
 
     if spec.sample_rate != 16000 {

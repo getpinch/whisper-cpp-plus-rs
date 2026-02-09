@@ -169,33 +169,36 @@ fn demonstrate_direct_enhanced_state(
 }
 
 fn load_audio_examples() -> Result<(Vec<f32>, Vec<f32>), Box<dyn std::error::Error>> {
-    // Try to use real audio files from whisper.cpp samples or user-provided samples
-    let jfk_path = "vendor/whisper.cpp/samples/jfk.wav";
-    let clear_path = "samples/clear_speech.wav";
-    let noisy_path = "samples/noisy_speech.wav";
+    // Check env var first
+    let jfk_from_env = std::env::var("WHISPER_TEST_AUDIO_DIR")
+        .ok()
+        .map(|d| format!("{}/jfk.wav", d))
+        .filter(|p| Path::new(p).exists());
 
-    // Use JFK audio as the clear sample if available
-    let clear_audio = if Path::new(jfk_path).exists() {
-        println!("Loading clear audio from: {}", jfk_path);
-        load_wav_file(jfk_path)?
-    } else if Path::new(clear_path).exists() {
-        println!("Loading clear audio from: {}", clear_path);
-        load_wav_file(clear_path)?
+    let jfk_paths = [
+        "../whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "whisper-cpp-plus-sys/whisper.cpp/samples/jfk.wav",
+        "samples/clear_speech.wav",
+    ];
+
+    let clear_audio = if let Some(ref p) = jfk_from_env {
+        println!("Loading clear audio from: {}", p);
+        load_wav_file(p)?
+    } else if let Some(path) = jfk_paths.iter().find(|p| Path::new(p).exists()) {
+        println!("Loading clear audio from: {}", path);
+        load_wav_file(path)?
     } else {
         eprintln!("\nError: No audio files found!");
-        eprintln!("Please provide one of the following:");
-        eprintln!("  1. {} (JFK sample from whisper.cpp)", jfk_path);
-        eprintln!("  2. {} (custom clear speech sample)", clear_path);
-        eprintln!("\nNote: Synthetic audio generation was removed as it doesn't produce meaningful speech.");
+        eprintln!("Set WHISPER_TEST_AUDIO_DIR env var or provide audio.");
         return Err("No audio files found".into());
     };
 
-    // For noisy audio, try to load from file or create a noisy version of clear audio
+    // For noisy audio, try to load from file or create a noisy version
+    let noisy_path = "samples/noisy_speech.wav";
     let noisy_audio = if Path::new(noisy_path).exists() {
         println!("Loading noisy audio from: {}", noisy_path);
         load_wav_file(noisy_path)?
     } else {
-        println!("\nNote: No noisy audio sample found at {}", noisy_path);
         println!("Creating noisy version from clear audio for demonstration...");
         add_noise_to_audio(&clear_audio)
     };
