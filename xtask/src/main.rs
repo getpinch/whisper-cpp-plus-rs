@@ -137,7 +137,7 @@ fn build_whisper_cpp(
     cuda: bool,
 ) -> Result<()> {
     let root = project_root()?;
-    let vendor_path = root.join("vendor/whisper.cpp");
+    let vendor_path = root.join("whisper-cpp-plus-sys/whisper.cpp");
 
     let mut config = cmake::Config::new(&vendor_path);
     config

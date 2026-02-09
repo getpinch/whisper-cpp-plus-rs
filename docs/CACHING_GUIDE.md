@@ -83,7 +83,7 @@ cargo xtask test-setup
 cargo xtask test-setup --force
 ```
 
-Downloads `ggml-tiny.en.bin` and `ggml-silero-v6.2.0.bin` into `vendor/whisper.cpp/models/`. Works on both Windows (`.cmd` scripts) and Unix (`.sh` scripts).
+Downloads `ggml-tiny.en.bin` and `ggml-silero-v6.2.0.bin` into `whisper-cpp-plus-sys/whisper.cpp/models/`. Works on both Windows (`.cmd` scripts) and Unix (`.sh` scripts).
 
 ### Performance Impact
 

@@ -230,7 +230,7 @@ The easiest way to get test models:
 cargo xtask test-setup
 ```
 
-This downloads `ggml-tiny.en.bin` and the Silero VAD model into `vendor/whisper.cpp/models/` using whisper.cpp's own download scripts.
+This downloads `ggml-tiny.en.bin` and the Silero VAD model into `whisper-cpp-plus-sys/whisper.cpp/models/` using whisper.cpp's own download scripts.
 
 For production models, download from Hugging Face:
 

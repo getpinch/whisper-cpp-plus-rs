@@ -44,7 +44,7 @@ cargo xtask info
 
 ### `test-setup`
 
-Download test models (whisper tiny.en + Silero VAD) into `vendor/whisper.cpp/models/`.
+Download test models (whisper tiny.en + Silero VAD) into `whisper-cpp-plus-sys/whisper.cpp/models/`.
 
 ```sh
 cargo xtask test-setup          # download if not present
