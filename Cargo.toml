@@ -10,7 +10,7 @@ rust-version = "1.70.0"
 authors = ["Ross Morsali"]
 license = "MIT"
 repository = "https://github.com/getpinch/whisper-cpp-plus-rs"
-keywords = ["whisper", "speech", "transcription", "asr", "speech-to-text", "cpp"]
+keywords = ["whisper", "speech", "transcription", "asr", "speech-to-text"]
 categories = ["multimedia::audio", "api-bindings", "science::robotics"]
 
 [workspace.dependencies]
