@@ -7,10 +7,10 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70.0"
-authors = ["Ross Morse"]
+authors = ["Ross Morsali"]
 license = "MIT"
-repository = "https://github.com/Code-Amp/whisper-cpp-plus"
-keywords = ["whisper", "speech", "transcription", "asr", "speech-to-text"]
+repository = "https://github.com/getpinch/whisper-cpp-plus-rs"
+keywords = ["whisper", "speech", "transcription", "asr", "speech-to-text", "cpp"]
 categories = ["multimedia::audio", "api-bindings", "science::robotics"]
 
 [workspace.dependencies]
