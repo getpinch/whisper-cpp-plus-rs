@@ -1,20 +1,18 @@
-//! Streaming transcription example — new WhisperStream API (port of stream.cpp)
+//! Streaming transcription example — WhisperStream API (port of stream.cpp)
 //!
-//! Creates a WhisperStream, feeds audio from a wav file, and calls
-//! process_step() in a loop to get segments.
+//! Demonstrates:
+//! 1. Basic streaming with sliding window
+//! 2. Stream reuse across multiple sessions via .reset()
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use whisper_cpp_plus::{FullParams, SamplingStrategy, WhisperContext, WhisperStream, WhisperStreamConfig};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model_path = "tests/models/ggml-tiny.en.bin";
-    if !Path::new(model_path).exists() {
-        eprintln!("Model not found at: {}", model_path);
-        return Ok(());
-    }
+    let model_path = find_model("ggml-tiny.en.bin")
+        .ok_or("Model not found. Run: cargo xtask test-setup")?;
 
-    println!("Loading model...");
-    let ctx = WhisperContext::new(model_path)?;
+    println!("Loading model from {:?}...", model_path);
+    let ctx = WhisperContext::new(&model_path)?;
 
     let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 })
         .language("en");
@@ -65,7 +63,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("Done. Processed {} samples total.", stream.processed_samples());
+
+    // === Part 2: Stream reuse across sessions ===
+    println!("\n=== Stream Reuse Demo ===\n");
+    demo_stream_reuse(&ctx)?;
+
     Ok(())
+}
+
+/// Demonstrates reusing a WhisperStream across multiple sessions
+fn demo_stream_reuse(ctx: &WhisperContext) -> Result<(), Box<dyn std::error::Error>> {
+    let params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 }).language("en");
+    let mut stream = WhisperStream::with_config(ctx, params, WhisperStreamConfig::default())?;
+
+    for session in 1..=3 {
+        println!("--- Session {} ---", session);
+
+        if session > 1 {
+            stream.reset();  // Reuse stream without recreating context
+            println!("  (reset — state reused)");
+        }
+
+        // Feed 2 seconds of audio
+        let audio = load_audio_chunk(2)?;
+        stream.feed_audio(&audio);
+
+        while let Some(segments) = stream.process_step()? {
+            for seg in &segments {
+                println!("  [{:.2}s-{:.2}s]: {}", seg.start_seconds(), seg.end_seconds(), seg.text);
+            }
+        }
+
+        let flush_segs = stream.flush()?;
+        for seg in &flush_segs {
+            println!("  [flush {:.2}s-{:.2}s]: {}", seg.start_seconds(), seg.end_seconds(), seg.text);
+        }
+
+        println!("  processed: {} samples\n", stream.processed_samples());
+    }
+
+    Ok(())
+}
+
+fn load_audio_chunk(duration_secs: usize) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let audio = load_audio()?;
+    let needed = 16000 * duration_secs;
+    Ok(audio.into_iter().take(needed).collect())
 }
 
 fn load_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
@@ -103,4 +146,20 @@ fn load_audio() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         .collect();
 
     Ok(samples)
+}
+
+fn find_model(name: &str) -> Option<PathBuf> {
+    for env_var in ["WHISPER_TEST_MODEL_DIR", "WHISPER_MODEL_PATH"] {
+        if let Ok(dir) = std::env::var(env_var) {
+            let path = Path::new(&dir).join(name);
+            if path.exists() { return Some(path); }
+        }
+    }
+    let paths = [
+        format!("tests/models/{}", name),
+        format!("whisper-cpp-plus/tests/models/{}", name),
+        format!("../whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+        format!("whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
 }

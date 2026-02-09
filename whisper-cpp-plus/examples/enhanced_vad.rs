@@ -1,33 +1,23 @@
 //! Example demonstrating enhanced VAD with segment aggregation
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use whisper_cpp_plus::{WhisperContext, TranscriptionParams};
 use whisper_cpp_plus::enhanced::vad::{
     EnhancedWhisperVadProcessor, EnhancedVadParamsBuilder
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Check for model files
-    let model_path = "tests/models/ggml-base.en.bin";
-    let vad_model_path = "tests/models/ggml-silero-vad.bin";
-
-    if !Path::new(model_path).exists() {
-        eprintln!("Model file not found at: {}", model_path);
-        eprintln!("Please download a Whisper model from https://huggingface.co/ggerganov/whisper.cpp");
-        return Ok(());
-    }
-
-    if !Path::new(vad_model_path).exists() {
-        eprintln!("VAD model file not found at: {}", vad_model_path);
-        eprintln!("Please download the Silero VAD model");
-        return Ok(());
-    }
+    let model_path = find_model("ggml-tiny.en.bin")
+        .ok_or("Model not found. Run: cargo xtask test-setup")?;
+    let vad_model_path = find_model("ggml-silero-v6.2.0.bin")
+        .ok_or("VAD model not found. Run: cargo xtask test-setup")?;
 
     println!("Loading models...");
+    println!("  Whisper: {:?}", model_path);
+    println!("  VAD: {:?}", vad_model_path);
 
-    // Load models
-    let ctx = WhisperContext::new(model_path)?;
-    let mut vad = EnhancedWhisperVadProcessor::new(vad_model_path)?;
+    let ctx = WhisperContext::new(&model_path)?;
+    let mut vad = EnhancedWhisperVadProcessor::new(&vad_model_path)?;
 
     // Configure enhanced VAD with segment aggregation
     let vad_params = EnhancedVadParamsBuilder::new()
@@ -156,4 +146,20 @@ fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         .collect();
 
     Ok(samples)
+}
+
+fn find_model(name: &str) -> Option<PathBuf> {
+    for env_var in ["WHISPER_TEST_MODEL_DIR", "WHISPER_MODEL_PATH"] {
+        if let Ok(dir) = std::env::var(env_var) {
+            let path = Path::new(&dir).join(name);
+            if path.exists() { return Some(path); }
+        }
+    }
+    let paths = [
+        format!("tests/models/{}", name),
+        format!("whisper-cpp-plus/tests/models/{}", name),
+        format!("../whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+        format!("whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
 }

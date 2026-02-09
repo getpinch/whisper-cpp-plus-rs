@@ -1,6 +1,6 @@
 //! Example demonstrating temperature fallback for improved transcription quality
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use whisper_cpp_plus::{WhisperContext, TranscriptionParams, FullParams, SamplingStrategy};
 use whisper_cpp_plus::enhanced::fallback::{
     EnhancedTranscriptionParams, EnhancedTranscriptionParamsBuilder,
@@ -8,17 +8,11 @@ use whisper_cpp_plus::enhanced::fallback::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Check for model file
-    let model_path = "tests/models/ggml-base.en.bin";
+    let model_path = find_model("ggml-tiny.en.bin")
+        .ok_or("Model not found. Run: cargo xtask test-setup")?;
 
-    if !Path::new(model_path).exists() {
-        eprintln!("Model file not found at: {}", model_path);
-        eprintln!("Please download a Whisper model from https://huggingface.co/ggerganov/whisper.cpp");
-        return Ok(());
-    }
-
-    println!("Loading model...");
-    let ctx = WhisperContext::new(model_path)?;
+    println!("Loading model from {:?}...", model_path);
+    let ctx = WhisperContext::new(&model_path)?;
 
     // Load audio (you would load real audio here)
     let (clear_audio, noisy_audio) = load_audio_examples()?;
@@ -246,3 +240,18 @@ fn load_wav_file(path: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
     Ok(samples)
 }
 
+fn find_model(name: &str) -> Option<PathBuf> {
+    for env_var in ["WHISPER_TEST_MODEL_DIR", "WHISPER_MODEL_PATH"] {
+        if let Ok(dir) = std::env::var(env_var) {
+            let path = Path::new(&dir).join(name);
+            if path.exists() { return Some(path); }
+        }
+    }
+    let paths = [
+        format!("tests/models/{}", name),
+        format!("whisper-cpp-plus/tests/models/{}", name),
+        format!("../whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+        format!("whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
+}

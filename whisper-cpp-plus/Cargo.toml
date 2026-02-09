@@ -47,8 +47,8 @@ name = "streaming"
 path = "examples/streaming.rs"
 
 [[example]]
-name = "streaming_reuse_demo"
-path = "examples/streaming_reuse_demo.rs"
+name = "stream_pcm"
+path = "examples/stream_pcm.rs"
 
 [[example]]
 name = "compare_vad"

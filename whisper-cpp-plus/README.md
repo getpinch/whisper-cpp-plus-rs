@@ -13,24 +13,57 @@ Safe Rust bindings for [whisper.cpp](https://github.com/ggerganov/whisper.cpp) w
 
 ## Real-time Streaming
 
-Feed PCM audio chunks directly from a microphone or audio stream:
+Two streaming APIs for different use cases:
+
+### WhisperStream — Sliding Window (port of stream.cpp)
+
+Feed audio chunks and process with configurable step/overlap:
 
 ```rust
-use whisper_cpp_plus::{WhisperStreamPcm, StreamPcmParams};
+use whisper_cpp_plus::{WhisperContext, WhisperStream, WhisperStreamConfig, FullParams};
 
-let params = StreamPcmParams::builder()
-    .model_path("ggml-tiny.en.bin")
-    .vad_model_path("ggml-silero-v6.2.0.bin")
-    .build()?;
+let ctx = WhisperContext::new("ggml-tiny.en.bin")?;
+let params = FullParams::default().language("en");
+let config = WhisperStreamConfig { step_ms: 3000, ..Default::default() };
 
-let mut stream = WhisperStreamPcm::new(params)?;
+let mut stream = WhisperStream::with_config(&ctx, params, config)?;
 
-// Feed PCM chunks as they arrive (16kHz mono f32)
-for chunk in audio_source {
-    if let Some(text) = stream.process_audio(&chunk)? {
-        println!("Transcribed: {}", text);
+// Feed audio chunks as they arrive
+stream.feed_audio(&audio_chunk);
+
+// Process when ready
+while let Some(segments) = stream.process_step()? {
+    for seg in &segments {
+        println!("[{:.2}s] {}", seg.start_seconds(), seg.text);
     }
 }
+```
+
+### WhisperStreamPcm — VAD-driven (port of stream-pcm.cpp)
+
+Process raw PCM from any `Read` source with automatic VAD segmentation:
+
+```rust
+use whisper_cpp_plus::{WhisperContext, WhisperStreamPcm, WhisperStreamPcmConfig,
+                       PcmReader, PcmReaderConfig, FullParams};
+use std::fs::File;
+
+let ctx = WhisperContext::new("ggml-tiny.en.bin")?;
+let params = FullParams::default().language("en");
+let config = WhisperStreamPcmConfig { use_vad: true, ..Default::default() };
+
+// Create PCM reader from any Read source (file, stdin, socket, etc.)
+let file = File::open("audio.pcm")?;
+let reader = PcmReader::new(Box::new(file), PcmReaderConfig::default());
+
+let mut stream = WhisperStreamPcm::new(&ctx, params, config, reader)?;
+
+// Process until EOF
+stream.run(|segments, start_ms, end_ms| {
+    for seg in segments {
+        println!("[{:.2}s] {}", seg.start_seconds(), seg.text);
+    }
+})?;
 ```
 
 ## Batch Transcription
@@ -70,7 +103,7 @@ for seg in &result.segments {
 Enable in `Cargo.toml`:
 ```toml
 [dependencies]
-whisper-cpp-plus = { version = "0.1.0", features = ["cuda"] }
+whisper-cpp-plus = { version = "0.1.1", features = ["cuda"] }
 ```
 
 ## Modules
@@ -86,8 +119,8 @@ whisper-cpp-plus = { version = "0.1.0", features = ["cuda"] }
 
 ```sh
 cargo run --example basic
-cargo run --example streaming
-cargo run --example streaming_reuse_demo
+cargo run --example streaming           # WhisperStream (sliding window + reuse demo)
+cargo run --example stream_pcm          # WhisperStreamPcm (VAD-driven, threaded reader)
 cargo run --example compare_vad
 cargo run --example enhanced_vad
 cargo run --example temperature_fallback

@@ -1,19 +1,14 @@
 //! Compare standard VAD vs enhanced VAD with aggregation
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use whisper_cpp_plus::{WhisperVadProcessor, VadParams};
 use whisper_cpp_plus::enhanced::vad::{EnhancedWhisperVadProcessor, EnhancedVadParamsBuilder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Check for required files (env var or default path)
-    let vad_model_path = std::env::var("WHISPER_TEST_MODEL_DIR")
-        .map(|d| format!("{}/ggml-silero-vad.bin", d))
-        .unwrap_or_else(|_| "tests/models/ggml-silero-vad.bin".to_string());
+    let vad_model_path = find_model("ggml-silero-v6.2.0.bin")
+        .ok_or("VAD model not found. Run: cargo xtask test-setup")?;
 
-    if !Path::new(&vad_model_path).exists() {
-        eprintln!("VAD model not found at: {}", vad_model_path);
-        return Ok(());
-    }
+    println!("VAD model: {:?}", vad_model_path);
 
     println!("=== VAD Comparison: Standard vs Enhanced ===\n");
 
@@ -156,4 +151,20 @@ fn load_audio_example() -> Result<Vec<f32>, Box<dyn std::error::Error>> {
         eprintln!("  - {}", path);
     }
     Err("No audio files found for VAD comparison".into())
+}
+
+fn find_model(name: &str) -> Option<PathBuf> {
+    for env_var in ["WHISPER_TEST_MODEL_DIR", "WHISPER_MODEL_PATH"] {
+        if let Ok(dir) = std::env::var(env_var) {
+            let path = Path::new(&dir).join(name);
+            if path.exists() { return Some(path); }
+        }
+    }
+    let paths = [
+        format!("tests/models/{}", name),
+        format!("whisper-cpp-plus/tests/models/{}", name),
+        format!("../whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+        format!("whisper-cpp-plus-sys/whisper.cpp/models/{}", name),
+    ];
+    paths.iter().find(|p| Path::new(p).exists()).map(PathBuf::from)
 }
