@@ -321,7 +321,7 @@ fn info() -> Result<()> {
 
 fn test_setup(force: bool) -> Result<()> {
     let root = project_root()?;
-    let models_dir = root.join("vendor").join("whisper.cpp").join("models");
+    let models_dir = root.join("whisper-cpp-plus-sys").join("whisper.cpp").join("models");
 
     println!("Setting up test models in {}", models_dir.display());
     println!();
