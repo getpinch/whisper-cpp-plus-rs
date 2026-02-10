@@ -16,6 +16,13 @@ fn main() {
         println!("cargo:rerun-if-env-changed={}", var);
     }
 
+    // docs.rs builds in a network-isolated container - skip compilation and generate stubs
+    if env::var("DOCS_RS").is_ok() {
+        println!("cargo:warning=docs.rs build detected, generating stub bindings only");
+        generate_stub_bindings();
+        return;
+    }
+
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| "unknown".to_string());
 
     let prebuilt_dir = check_and_use_prebuilt(&target_os);
@@ -431,6 +438,172 @@ fn link_accelerator_libs(_target_os: &str) {
 // ---------------------------------------------------------------------------
 // Bindings
 // ---------------------------------------------------------------------------
+
+/// Generate stub bindings for docs.rs (network-isolated, can't download whisper.cpp)
+fn generate_stub_bindings() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let stub_bindings = r#"
+// Stub bindings for docs.rs documentation build.
+// This crate requires whisper.cpp which cannot be built in docs.rs's sandbox.
+// For actual usage, build locally or see the repository.
+
+#![allow(non_camel_case_types)]
+#![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
+
+pub type whisper_context = core::ffi::c_void;
+pub type whisper_state = core::ffi::c_void;
+pub type whisper_token = i32;
+pub type whisper_pos = i64;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct whisper_context_params {
+    pub use_gpu: bool,
+    pub flash_attn: bool,
+    pub gpu_device: core::ffi::c_int,
+    pub dtw_token_timestamps: bool,
+    pub dtw_aheads_preset: core::ffi::c_int,
+    pub dtw_n_top: core::ffi::c_int,
+    pub dtw_aheads: whisper_aheads,
+    pub dtw_mem_size: usize,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct whisper_aheads {
+    pub n_heads: usize,
+    pub heads: *const whisper_ahead,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct whisper_ahead {
+    pub n_text_layer: core::ffi::c_int,
+    pub n_head: core::ffi::c_int,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct whisper_full_params {
+    pub strategy: core::ffi::c_int,
+    pub n_threads: core::ffi::c_int,
+    pub n_max_text_ctx: core::ffi::c_int,
+    pub offset_ms: core::ffi::c_int,
+    pub duration_ms: core::ffi::c_int,
+    pub translate: bool,
+    pub no_context: bool,
+    pub no_timestamps: bool,
+    pub single_segment: bool,
+    pub print_special: bool,
+    pub print_progress: bool,
+    pub print_realtime: bool,
+    pub print_timestamps: bool,
+    pub token_timestamps: bool,
+    pub thold_pt: f32,
+    pub thold_ptsum: f32,
+    pub max_len: core::ffi::c_int,
+    pub split_on_word: bool,
+    pub max_tokens: core::ffi::c_int,
+    pub debug_mode: bool,
+    pub audio_ctx: core::ffi::c_int,
+    pub tdrz_enable: bool,
+    pub suppress_regex: *const core::ffi::c_char,
+    pub initial_prompt: *const core::ffi::c_char,
+    pub prompt_tokens: *const whisper_token,
+    pub prompt_n_tokens: core::ffi::c_int,
+    pub language: *const core::ffi::c_char,
+    pub detect_language: bool,
+    pub suppress_blank: bool,
+    pub suppress_nst: bool,
+    pub temperature: f32,
+    pub max_initial_ts: f32,
+    pub length_penalty: f32,
+    pub temperature_inc: f32,
+    pub entropy_thold: f32,
+    pub logprob_thold: f32,
+    pub no_speech_thold: f32,
+    pub greedy: whisper_full_params__bindgen_ty_1,
+    pub beam_search: whisper_full_params__bindgen_ty_2,
+    pub new_segment_callback: Option<unsafe extern "C" fn()>,
+    pub new_segment_callback_user_data: *mut core::ffi::c_void,
+    pub progress_callback: Option<unsafe extern "C" fn()>,
+    pub progress_callback_user_data: *mut core::ffi::c_void,
+    pub encoder_begin_callback: Option<unsafe extern "C" fn()>,
+    pub encoder_begin_callback_user_data: *mut core::ffi::c_void,
+    pub abort_callback: Option<unsafe extern "C" fn()>,
+    pub abort_callback_user_data: *mut core::ffi::c_void,
+    pub logits_filter_callback: Option<unsafe extern "C" fn()>,
+    pub logits_filter_callback_user_data: *mut core::ffi::c_void,
+    pub grammar_rules: *const *const core::ffi::c_void,
+    pub n_grammar_rules: usize,
+    pub i_start_rule: usize,
+    pub grammar_penalty: f32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct whisper_full_params__bindgen_ty_1 {
+    pub best_of: core::ffi::c_int,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct whisper_full_params__bindgen_ty_2 {
+    pub beam_size: core::ffi::c_int,
+    pub patience: f32,
+}
+
+pub const WHISPER_SAMPLE_RATE: u32 = 16000;
+pub const WHISPER_N_FFT: u32 = 400;
+pub const WHISPER_HOP_LENGTH: u32 = 160;
+pub const WHISPER_CHUNK_SIZE: u32 = 30;
+
+// Stub function declarations (not callable, just for docs)
+extern "C" {
+    pub fn whisper_init_from_file_with_params(
+        path: *const core::ffi::c_char,
+        params: whisper_context_params,
+    ) -> *mut whisper_context;
+    pub fn whisper_free(ctx: *mut whisper_context);
+    pub fn whisper_init_state(ctx: *mut whisper_context) -> *mut whisper_state;
+    pub fn whisper_free_state(state: *mut whisper_state);
+    pub fn whisper_full_default_params(strategy: core::ffi::c_int) -> whisper_full_params;
+    pub fn whisper_full(
+        ctx: *mut whisper_context,
+        params: whisper_full_params,
+        samples: *const f32,
+        n_samples: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+    pub fn whisper_full_with_state(
+        ctx: *mut whisper_context,
+        state: *mut whisper_state,
+        params: whisper_full_params,
+        samples: *const f32,
+        n_samples: core::ffi::c_int,
+    ) -> core::ffi::c_int;
+    pub fn whisper_full_n_segments_from_state(state: *mut whisper_state) -> core::ffi::c_int;
+    pub fn whisper_full_get_segment_text_from_state(
+        state: *mut whisper_state,
+        i_segment: core::ffi::c_int,
+    ) -> *const core::ffi::c_char;
+    pub fn whisper_full_get_segment_t0_from_state(
+        state: *mut whisper_state,
+        i_segment: core::ffi::c_int,
+    ) -> i64;
+    pub fn whisper_full_get_segment_t1_from_state(
+        state: *mut whisper_state,
+        i_segment: core::ffi::c_int,
+    ) -> i64;
+    pub fn whisper_context_default_params() -> whisper_context_params;
+    pub fn whisper_is_multilingual(ctx: *mut whisper_context) -> core::ffi::c_int;
+    pub fn whisper_lang_id(lang: *const core::ffi::c_char) -> core::ffi::c_int;
+}
+"#;
+    std::fs::write(out_dir.join("bindings.rs"), stub_bindings)
+        .expect("Failed to write stub bindings");
+}
 
 fn generate_bindings() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());

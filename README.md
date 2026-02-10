@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ```toml
 [dependencies]
-whisper-cpp-plus = "0.1.1"
+whisper-cpp-plus = "0.1.2"
 
 # Optional
 hound = "3.5"  # WAV file loading
@@ -56,10 +56,10 @@ hound = "3.5"  # WAV file loading
 ### Feature Flags
 
 ```toml
-whisper-cpp-plus = { version = "0.1.1", features = ["quantization"] }  # Model quantization
-whisper-cpp-plus = { version = "0.1.1", features = ["async"] }         # Async API
-whisper-cpp-plus = { version = "0.1.1", features = ["cuda"] }          # NVIDIA GPU
-whisper-cpp-plus = { version = "0.1.1", features = ["metal"] }         # macOS GPU
+whisper-cpp-plus = { version = "0.1.2", features = ["quantization"] }  # Model quantization
+whisper-cpp-plus = { version = "0.1.2", features = ["async"] }         # Async API
+whisper-cpp-plus = { version = "0.1.2", features = ["cuda"] }          # NVIDIA GPU
+whisper-cpp-plus = { version = "0.1.2", features = ["metal"] }         # macOS GPU
 ```
 
 ### CUDA GPU Acceleration
